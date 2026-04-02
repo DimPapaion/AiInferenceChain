@@ -162,13 +162,21 @@ class Chain:
         if not block.verify_merkle_root():
             raise ValueError("Merkle root mismatch — block transactions may be tampered.")
 
+        # Validate all simple txs, tracking intra-block nonce increments
+        intra_nonces: dict[str, int] = {}
         for tx in block.simple_txs:
-            self._validate_tx(tx)
+            self._validate_tx(tx, intra_nonces)
+            intra_nonces[tx.sender] = tx.nonce
 
-    def _validate_tx(self, tx: Transaction) -> None:
-        """Validate a simple transaction against current state."""
-        # Nonce must be exactly current + 1
-        expected = self.state.nonce_of(tx.sender) + 1
+    def _validate_tx(self, tx: Transaction, intra_nonces: dict | None = None) -> None:
+        """Validate a simple transaction against current state + intra-block nonces."""
+        # Use intra-block nonce if sender already has a tx earlier in this block
+        current_nonce = (
+            intra_nonces[tx.sender]
+            if intra_nonces and tx.sender in intra_nonces
+            else self.state.nonce_of(tx.sender)
+        )
+        expected = current_nonce + 1
         if tx.nonce != expected:
             raise ValueError(
                 f"Invalid nonce for {tx.sender[:8]}: expected {expected}, got {tx.nonce}"
