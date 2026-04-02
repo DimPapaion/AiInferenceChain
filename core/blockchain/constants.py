@@ -21,10 +21,21 @@ BLOCK_TIME_TARGET   = 5.0              # seconds between blocks (target)
 DEFAULT_F           = 1                 # default fault tolerance
 VIEW_CHANGE_TIMEOUT = 10.0             # seconds before triggering view change
 
-# ── Inference ─────────────────────────────────────────────────────────────────
+# ── Inference / QoI ───────────────────────────────────────────────────────────
 NUM_CLASSES         = 10                # CIFAR-10
-INFERENCE_REWARD    = 10.0             # INFER rewarded per honest inference
+INFERENCE_REWARD    = 10.0             # INFER minted per consensus round (block reward)
 MIN_CONFIDENCE      = 0.5              # minimum softmax confidence to accept result
+LEADER_BONUS        = 2.0              # extra INFER for the primary that drove consensus
+
+# ── Reputation ────────────────────────────────────────────────────────────────
+INITIAL_REPUTATION  = 0.0              # reputation at node registration
+REP_CAP_PER_ROUND   = 0.5             # max reputation gain per consensus round
+REP_PENALTY         = 0.3             # reputation loss per Byzantine act
+REP_LEADER_BONUS    = 0.1             # extra rep for primary on top of QoI-proportional gain
+
+# ── QoI Scoring ───────────────────────────────────────────────────────────────
+QOI_HONEST_THRESHOLD = 0.0            # cosine sim floor — all argmax-correct nodes rewarded
+                                       # (set > 0 to require minimum quality)
 
 # ── Mempool ───────────────────────────────────────────────────────────────────
 MEMPOOL_MAX_SIZE    = 10_000           # max pending transactions

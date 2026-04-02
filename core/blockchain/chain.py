@@ -20,7 +20,7 @@ from .transaction import (
 )
 from .constants import (
     MIN_STAKE, INFERENCE_REWARD, SLASH_PENALTY,
-    DEFAULT_F,
+    DEFAULT_F, INITIAL_REPUTATION, REP_PENALTY,
 )
 from .utils import compute_merkle_root
 
@@ -76,12 +76,13 @@ class ChainState:
     """
     Full ledger state — what the chain currently looks like after all blocks.
     """
-    balances:      dict[str, float]       = field(default_factory=dict)
-    stakes:        dict[str, float]       = field(default_factory=dict)
-    nonces:        dict[str, int]         = field(default_factory=dict)
-    nodes:         dict[str, NodeInfo]    = field(default_factory=dict)
-    contracts:     dict[str, ContractInfo]= field(default_factory=dict)
-    inference_log: dict[str, dict]        = field(default_factory=dict)
+    balances:      dict[str, float]        = field(default_factory=dict)
+    stakes:        dict[str, float]        = field(default_factory=dict)
+    nonces:        dict[str, int]          = field(default_factory=dict)
+    nodes:         dict[str, NodeInfo]     = field(default_factory=dict)
+    contracts:     dict[str, ContractInfo] = field(default_factory=dict)
+    inference_log: dict[str, dict]         = field(default_factory=dict)
+    reputations:   dict[str, float]        = field(default_factory=dict)
 
     def balance_of(self, address: str) -> float:
         return self.balances.get(address, 0.0)
@@ -91,6 +92,9 @@ class ChainState:
 
     def nonce_of(self, address: str) -> int:
         return self.nonces.get(address, 0)
+
+    def reputation_of(self, address: str) -> float:
+        return self.reputations.get(address, INITIAL_REPUTATION)
 
     def active_nodes(self) -> list[NodeInfo]:
         return [n for n in self.nodes.values() if n.is_active]
@@ -271,6 +275,8 @@ class Chain:
                     endpoint      = p.endpoint,
                     registered_at = height,
                 )
+                # Initialise reputation at zero on registration
+                self.state.reputations[tx.sender] = INITIAL_REPUTATION
                 self.state.balances[tx.sender] = (
                     self.state.balance_of(tx.sender) - tx.fee
                 )
@@ -310,6 +316,9 @@ class Chain:
             case TxType.SLASH:
                 current_stake = self.state.stake_of(tx.sender)
                 self.state.stakes[tx.sender] = max(0.0, current_stake - tx.payload.amount)
+                # Apply reputation penalty
+                current_rep = self.state.reputation_of(tx.sender)
+                self.state.reputations[tx.sender] = max(0.0, current_rep - REP_PENALTY)
                 # Mark node inactive if stake drops below minimum
                 if (
                     tx.sender in self.state.nodes
@@ -324,6 +333,16 @@ class Chain:
             case TxType.INFERENCE_REQUEST | TxType.INFERENCE_RESPONSE:
                 # These are recorded structurally in the block; no state change needed
                 pass
+
+    def apply_reputation_deltas(self, deltas: dict[str, float]) -> None:
+        """
+        Apply reputation deltas produced by a QoI round.
+        Called by the consensus layer after a round is committed.
+        Reputation is clamped to [0, ∞).
+        """
+        for node_id, delta in deltas.items():
+            current = self.state.reputation_of(node_id)
+            self.state.reputations[node_id] = max(0.0, current + delta)
 
     # ── Representation ────────────────────────────────────────────────────────
 
