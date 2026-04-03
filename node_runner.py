@@ -42,6 +42,7 @@ import argparse
 import asyncio
 import logging
 from pathlib import Path
+from typing import Any
 
 import uvicorn
 
@@ -60,8 +61,24 @@ logging.basicConfig(
 log = logging.getLogger("node_runner")
 
 
+def _load_config(path: str) -> dict[str, Any]:
+    """Load a YAML testnet config file. Returns {} if path is None."""
+    if not path:
+        return {}
+    try:
+        import yaml  # pyyaml
+    except ImportError:
+        log.warning("pyyaml not installed — ignoring --config.  pip install pyyaml")
+        return {}
+    with open(path) as f:
+        return yaml.safe_load(f) or {}
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="InferenceChain node")
+    p.add_argument("--config",    default=None,
+                   help="YAML config file (e.g. config/testnet.yaml).  "
+                        "CLI flags override config file values.")
     p.add_argument("--host",      default="0.0.0.0",       help="Bind host (REST + P2P)")
     p.add_argument("--port",      type=int, default=8000,   help="REST API port")
     p.add_argument("--p2p-port",  type=int, default=None,
@@ -89,8 +106,22 @@ def parse_args() -> argparse.Namespace:
 
 
 async def run(args: argparse.Namespace) -> None:
+    # ── Load config file (testnet.yaml etc.) ──────────────────────────────────
+    cfg = _load_config(args.config)
+    if cfg:
+        log.info("Config loaded        : %s  (network=%s)", args.config, cfg.get("network", "?"))
+
+    # ── Resolve effective values (CLI overrides config) ───────────────────────
+    effective_f = args.f if args.f != 1 or not cfg.get("f") else cfg["f"]
+
     # ── Parse genesis allocations ─────────────────────────────────────────────
     allocations: dict[str, float] = {}
+
+    # From config file first
+    for addr, amount in (cfg.get("genesis_allocations") or {}).items():
+        allocations[str(addr)] = float(amount)
+
+    # CLI --allocate flags override/extend config allocations
     for item in (args.allocate or []):
         try:
             addr, amount = item.rsplit(":", 1)
@@ -104,16 +135,23 @@ async def run(args: argparse.Namespace) -> None:
         log.info("Dev genesis identity : %s", dev_id.address)
         log.info("  private key        : %s", dev_id.private_key_hex)
 
+    # ── Bootstrap peers: config + CLI ─────────────────────────────────────────
+    config_peers: list[str] = [
+        p.rstrip("/") for p in (cfg.get("bootstrap_peers") or [])
+    ]
+    cli_peers: list[str] = [p.rstrip("/") for p in (args.peer or [])]
+    all_bootstrap_peers = list(dict.fromkeys(config_peers + cli_peers))  # dedup, order preserved
+
     # ── Node service (Chain + Mempool + optional DB) ───────────────────────────
     if args.db_path:
         svc = create_persistent_node_service(
             db_path             = args.db_path,
             initial_allocations = allocations,
-            f                   = args.f,
+            f                   = effective_f,
         )
         log.info("Persistent storage   : %s", args.db_path)
     else:
-        svc = create_node_service(initial_allocations=allocations, f=args.f)
+        svc = create_node_service(initial_allocations=allocations, f=effective_f)
         log.info("Running in-memory (no --db-path)")
 
     log.info(
@@ -146,11 +184,17 @@ async def run(args: argparse.Namespace) -> None:
         p2p_port     = p2p_port,
         host         = args.host,
     )
-    # Seed bootstrap peers from discovery (file + CLI --peer flags)
+    # Seed bootstrap peers from discovery (file + CLI --peer flags + config)
     p2p.attach_discovery(discovery)
     for peer_url in discovery.seed_peers():
         p2p.add_bootstrap(peer_url)
         svc.add_peer(peer_url)
+    # Also add config-file peers that weren't yet in the seed file
+    for peer_url in all_bootstrap_peers:
+        if peer_url not in discovery.all_peers():
+            discovery.add(peer_url)
+            p2p.add_bootstrap(peer_url)
+            svc.add_peer(peer_url)
 
     # Attach p2p reference to svc so HTTP routes can gossip too
     svc._p2p_server = p2p  # type: ignore[attr-defined]
@@ -160,7 +204,7 @@ async def run(args: argparse.Namespace) -> None:
         node_service = svc,
         node_id      = node_id,
         node_type    = "pos",   # "dnn" when model loading is wired
-        f            = args.f,
+        f            = effective_f,
     )
     engine.attach_p2p(p2p)
     engine.attach_image_store(image_store)

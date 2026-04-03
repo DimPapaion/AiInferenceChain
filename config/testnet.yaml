@@ -1,0 +1,52 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# InferenceChain — Local Testnet Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# This file defines the shared genesis block for a 3-node local testnet.
+# ALL nodes must start with the same config to share the same genesis hash.
+#
+# QUICK START (3 terminals on localhost):
+#
+#   Terminal 1 (node 0 — genesis node):
+#     python node_runner.py --config config/testnet.yaml --port 8000 --db-path data/node0.db
+#
+#   Terminal 2 (node 1):
+#     python node_runner.py --config config/testnet.yaml --port 8001 --db-path data/node1.db
+#
+#   Terminal 3 (node 2):
+#     python node_runner.py --config config/testnet.yaml --port 8002 --db-path data/node2.db
+#
+#   Dashboard:   http://localhost:8000/ui/
+#   API docs:    http://localhost:8000/docs
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+network: testnet-1
+
+# BFT fault tolerance.
+# f=1 means: tolerate 1 faulty node, need 3 nodes to reach 2f+1=3 votes.
+# Use f=0 for single-node testing (instant commits).
+f: 1
+
+# ── Genesis allocations ───────────────────────────────────────────────────────
+# These addresses start with 1,000,000 INFER each.
+# The private keys are listed below for development use only.
+# In production: generate your own keys with `python wallet.py new`.
+
+genesis_allocations:
+  f0f151093a37fa9219c6c9de2aa66de0a7e9aef4: 1000000   # node-0 wallet
+  207047c660f44e18dcd27676833bc69f63ae2fda: 1000000   # node-1 wallet
+  6bdfd1492556f16b47a1982c21ac5efc2c97dbb6: 1000000   # node-2 wallet
+
+# ── Bootstrap seeds ───────────────────────────────────────────────────────────
+# All nodes connect to node-0 first, then discover each other via gossip.
+bootstrap_peers:
+  - http://127.0.0.1:8000
+
+# ── Dev wallet private keys ───────────────────────────────────────────────────
+# These correspond to the genesis addresses above.
+# Import with:  python wallet.py import <private_key_hex> --out nodeN.json
+#
+# node-0: 947f6967eba35761053563545933a3899ed077c4cdb900b90d70f1adf62ccabf
+# node-1: 36b88f136b9e0d1b27f3dbe7856d06968d402960354fe67b0d1df0384158bd69
+# node-2: a6982723df7dc426f0822073a4bf2ac14d4efd09c72e56451d35e8ea3ba6bb5f
