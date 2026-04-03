@@ -198,12 +198,14 @@ class NodeService:
 def create_node_service(
     initial_allocations: dict[str, float] | None = None,
     initial_nodes:       list[dict] | None = None,
+    initial_dnn_nodes:   list[dict] | None = None,
     f:                   int = DEFAULT_F,
 ) -> NodeService:
     """Bootstrap an in-memory NodeService (no persistence). Used in tests."""
     genesis = create_genesis_block(
-        initial_allocations=initial_allocations,
-        initial_nodes=initial_nodes,
+        initial_allocations = initial_allocations,
+        initial_nodes       = initial_nodes,
+        initial_dnn_nodes   = initial_dnn_nodes,
     )
     chain = Chain(genesis, f=f)
     return NodeService(chain=chain)
@@ -213,6 +215,7 @@ def create_persistent_node_service(
     db_path:             str,
     initial_allocations: dict[str, float] | None = None,
     initial_nodes:       list[dict] | None = None,
+    initial_dnn_nodes:   list[dict] | None = None,
     f:                   int = DEFAULT_F,
 ) -> NodeService:
     """Bootstrap a NodeService backed by SQLite persistence."""
@@ -221,6 +224,7 @@ def create_persistent_node_service(
         db_path             = db_path,
         initial_allocations = initial_allocations,
         initial_nodes       = initial_nodes,
+        initial_dnn_nodes   = initial_dnn_nodes,
         f                   = f,
     )
     return NodeService(chain=chain, db=db)

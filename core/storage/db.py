@@ -226,6 +226,7 @@ def open_or_create_chain(
     db_path:             str | Path,
     initial_allocations: dict[str, float] | None = None,
     initial_nodes:       list[dict] | None = None,
+    initial_dnn_nodes:   list[dict] | None = None,
     f:                   int = 1,
 ) -> tuple[Chain, ChainDB]:
     """
@@ -251,8 +252,9 @@ def open_or_create_chain(
     else:
         log.info("No existing chain found at %s — creating genesis", db_path)
         genesis = create_genesis_block(
-            initial_allocations=initial_allocations,
-            initial_nodes=initial_nodes,
+            initial_allocations = initial_allocations,
+            initial_nodes       = initial_nodes,
+            initial_dnn_nodes   = initial_dnn_nodes,
         )
         chain = Chain(genesis, f=f)
         db.save_block(genesis)

@@ -2,51 +2,80 @@
 # InferenceChain — Local Testnet Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 #
-# This file defines the shared genesis block for a 3-node local testnet.
-# ALL nodes must start with the same config to share the same genesis hash.
+# 4 DNN validator nodes (QoI consensus).
+# All nodes share this config to produce the same genesis block.
 #
-# QUICK START (3 terminals on localhost):
+# QUICK START — run scripts\start_testnet.bat
 #
-#   Terminal 1 (node 0 — genesis node):
-#     python node_runner.py --config config/testnet.yaml --port 8000 --db-path data/node0.db
+#   DNN nodes on ports 8010-8013 (REST) / 9010-9013 (P2P)
+#   Dashboard:   http://localhost:8010/ui/
+#   API docs:    http://localhost:8010/docs
 #
-#   Terminal 2 (node 1):
-#     python node_runner.py --config config/testnet.yaml --port 8001 --db-path data/node1.db
-#
-#   Terminal 3 (node 2):
-#     python node_runner.py --config config/testnet.yaml --port 8002 --db-path data/node2.db
-#
-#   Dashboard:   http://localhost:8000/ui/
-#   API docs:    http://localhost:8000/docs
+# To import a DNN node wallet:
+#   .venv\Scripts\python.exe wallet.py import <private_key> --out dnn0.json
 #
 # ─────────────────────────────────────────────────────────────────────────────
 
 network: testnet-1
 
 # BFT fault tolerance.
-# f=1 means: tolerate 1 faulty node, need 3 nodes to reach 2f+1=3 votes.
-# Use f=0 for single-node testing (instant commits).
+# f=1 → need 2f+1=3 votes.  4 DNN nodes → 1 Byzantine node tolerated.
 f: 1
 
-# ── Genesis allocations ───────────────────────────────────────────────────────
-# These addresses start with 1,000,000 INFER each.
-# The private keys are listed below for development use only.
-# In production: generate your own keys with `python wallet.py new`.
+# ── Genesis token allocations ─────────────────────────────────────────────────
+# Each DNN node address gets 1,000,000 INFER; 50,000 of that will be
+# auto-staked at genesis (see dnn_nodes[].stake below).
 
 genesis_allocations:
-  f0f151093a37fa9219c6c9de2aa66de0a7e9aef4: 1000000   # node-0 wallet
-  207047c660f44e18dcd27676833bc69f63ae2fda: 1000000   # node-1 wallet
-  6bdfd1492556f16b47a1982c21ac5efc2c97dbb6: 1000000   # node-2 wallet
+  2736393ddf3798aef2008b70cd8d530e3c1124f2: 1000000   # dnn-node-0 (resnet20)
+  4f388dbd797891b668cb42f12c48c2cf0cd6ff5b: 1000000   # dnn-node-1 (resnet56)
+  cc155e1df4ac34c267df127ac802df760efde7b3: 1000000   # dnn-node-2 (vgg11_bn)
+  b649d10b829b7c3acdf8c3fd7a76e481c8add29e: 1000000   # dnn-node-3 (densenet40_12)
+
+# ── DNN validator nodes (pre-admitted at genesis — PoM skipped for testnet) ──
+# Each entry writes: NODE_REGISTER_DNN + STAKE + NODE_ADMITTED into block 0.
+
+dnn_nodes:
+  - address:      2736393ddf3798aef2008b70cd8d530e3c1124f2
+    public_key:   359277d33505d6cf697d6a03d6c889791db02520f12560e75b61b4469297b961ced8c2e6f198bf38e4eefa36b4bf8999e2b02fddf3cbb74923a54c9958249cf3
+    model_name:   resnet20
+    endpoint:     http://127.0.0.1:8010
+    weights_hash: 5d1deb5d3c9420c31dfebec6da2fbf094f9f6901ab7780e73d4da5ebceb4e54e
+    dataset_id:   cifar10
+    stake:        50000.0
+
+  - address:      4f388dbd797891b668cb42f12c48c2cf0cd6ff5b
+    public_key:   7de68a2ea4de92e310bf65f2091acb6dab51cf537d76da0fdea26b197d400db2fda9e3bb6c21ec7543342e138e80288649b889e942ee9cd5fc410cb233824a47
+    model_name:   resnet56
+    endpoint:     http://127.0.0.1:8011
+    weights_hash: ab312528bc8764e1fdce83d61e4787438b4f615de15ec88959891c0d7c1beaa8
+    dataset_id:   cifar10
+    stake:        50000.0
+
+  - address:      cc155e1df4ac34c267df127ac802df760efde7b3
+    public_key:   8cafdb54fa77074970726343e9436cb3a095bee9e6de3626a1be9a40e606f74e409f8152c4b91ee71e176e7ee7a5b248a9357cc410778cd2fd1e0599da674fba
+    model_name:   vgg11_bn
+    endpoint:     http://127.0.0.1:8012
+    weights_hash: 67bd5d8499879020f573dc04761899fd3e5ec2fd5b5fabc09a27059465014960
+    dataset_id:   cifar10
+    stake:        50000.0
+
+  - address:      b649d10b829b7c3acdf8c3fd7a76e481c8add29e
+    public_key:   7c858e6509fdc5f9062812dd7b3423cc7bc058e9b772c4614ee591e724e7abf735be1f590473fca3cc33fc8785e9815fe49eabdb19a52b2831b08cb65d4b2f8d
+    model_name:   densenet40_12
+    endpoint:     http://127.0.0.1:8013
+    weights_hash: 78b524f9e462e1ccbe2baba2f3493776ca1c212e34f5521e18dabff7fcf8a1ca
+    dataset_id:   cifar10
+    stake:        50000.0
 
 # ── Bootstrap seeds ───────────────────────────────────────────────────────────
-# All nodes connect to node-0 first, then discover each other via gossip.
 bootstrap_peers:
-  - http://127.0.0.1:8000
+  - http://127.0.0.1:8010
 
 # ── Dev wallet private keys ───────────────────────────────────────────────────
-# These correspond to the genesis addresses above.
-# Import with:  python wallet.py import <private_key_hex> --out nodeN.json
+# Import with:  .venv\Scripts\python.exe wallet.py import <key> --out dnnN.json
 #
-# node-0: 947f6967eba35761053563545933a3899ed077c4cdb900b90d70f1adf62ccabf
-# node-1: 36b88f136b9e0d1b27f3dbe7856d06968d402960354fe67b0d1df0384158bd69
-# node-2: a6982723df7dc426f0822073a4bf2ac14d4efd09c72e56451d35e8ea3ba6bb5f
+# dnn-node-0 (resnet20):      5f0182a74c11939cc66bc5f35744ad0f15910a8b6e97fdcc52aafd3633d52228
+# dnn-node-1 (resnet56):      84bc2518750071408661eb846b303e02554e4cbea4f07c67ed1e9a5d5bc4ca04
+# dnn-node-2 (vgg11_bn):      2ee709c86b49396d86a04566871752846a38f67f65b358b7a054bfb78b232c16
+# dnn-node-3 (densenet40_12): e8a2b44a69dbe729b7c89f47d6f687ab377bcf1415842c38cd87a7970b08d389

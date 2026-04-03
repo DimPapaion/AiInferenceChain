@@ -52,6 +52,7 @@ from core.consensus.engine import ConsensusEngine
 from core.network.discovery import PeerDiscovery
 from core.network.p2p_server import P2PServer
 from core.node.identity import NodeIdentity
+from core.node.inference_node import ModelHandle
 from core.serving.image_store import ImageStore
 
 logging.basicConfig(
@@ -102,6 +103,17 @@ def parse_args() -> argparse.Namespace:
                    help="Peer seed file path (default: data/peers.txt)")
     p.add_argument("--image-dir", default="data/images",
                    help="Content-addressed image store directory (default: data/images)")
+    # ── DNN node options ──────────────────────────────────────────────────────
+    p.add_argument("--node-type",   default="pos", choices=["pos", "dnn"],
+                   help="Node role: 'pos' (default) or 'dnn' (runs inference + QoI consensus)")
+    p.add_argument("--model",       default=None,
+                   help="Model name for DNN nodes (e.g. resnet20, vgg11_bn).  "
+                        "Required when --node-type dnn.")
+    p.add_argument("--weights-dir", default="models/weights",
+                   help="Directory containing .pth weight files (default: models/weights)")
+    p.add_argument("--private-key", default=None,
+                   help="Hex private key for this node's identity.  "
+                        "Used for signing txs (DNN nodes).  Generates fresh key if omitted.")
     return p.parse_args()
 
 
@@ -142,16 +154,26 @@ async def run(args: argparse.Namespace) -> None:
     cli_peers: list[str] = [p.rstrip("/") for p in (args.peer or [])]
     all_bootstrap_peers = list(dict.fromkeys(config_peers + cli_peers))  # dedup, order preserved
 
+    # ── DNN nodes from config (pre-admitted in genesis) ───────────────────────
+    initial_dnn_nodes: list[dict] | None = cfg.get("dnn_nodes") or None
+    if initial_dnn_nodes:
+        log.info("DNN genesis nodes    : %d pre-admitted", len(initial_dnn_nodes))
+
     # ── Node service (Chain + Mempool + optional DB) ───────────────────────────
     if args.db_path:
         svc = create_persistent_node_service(
             db_path             = args.db_path,
             initial_allocations = allocations,
+            initial_dnn_nodes   = initial_dnn_nodes,
             f                   = effective_f,
         )
         log.info("Persistent storage   : %s", args.db_path)
     else:
-        svc = create_node_service(initial_allocations=allocations, f=effective_f)
+        svc = create_node_service(
+            initial_allocations = allocations,
+            initial_dnn_nodes   = initial_dnn_nodes,
+            f                   = effective_f,
+        )
         log.info("Running in-memory (no --db-path)")
 
     log.info(
@@ -177,7 +199,15 @@ async def run(args: argparse.Namespace) -> None:
     # machine can actually reach us. Override with --node-id / explicit host.
     announced_host = "127.0.0.1" if args.host == "0.0.0.0" else args.host
     endpoint       = f"http://{announced_host}:{rest_port}"
-    node_id        = args.node_id or f"node-{rest_port}"
+
+    # For DNN nodes use a stable identity derived from the private key so the
+    # address matches what is pre-admitted in the genesis block.
+    if args.private_key:
+        _identity = NodeIdentity.from_private_key(args.private_key)
+        node_id   = _identity.address
+        log.info("Node identity        : %s  (from --private-key)", node_id)
+    else:
+        node_id = args.node_id or f"node-{rest_port}"
 
     # ── P2P server ────────────────────────────────────────────────────────────
     p2p = P2PServer(
@@ -202,11 +232,41 @@ async def run(args: argparse.Namespace) -> None:
     # Attach p2p reference to svc so HTTP routes can gossip too
     svc._p2p_server = p2p  # type: ignore[attr-defined]
 
+    # ── DNN model loading (DNN nodes only) ───────────────────────────────────
+    model_handle: ModelHandle | None = None
+    node_type = args.node_type
+
+    if node_type == "dnn":
+        if not args.model:
+            log.error("--model is required when --node-type dnn")
+            return
+        import hashlib, os as _os
+        weights_path = _os.path.join(args.weights_dir, f"{args.model}.pth")
+        if not _os.path.exists(weights_path):
+            log.error("Weights not found: %s  (run scratch/train_cifar10_models.py)", weights_path)
+            return
+        # Compute weights hash for on-chain registration
+        _h = hashlib.sha256()
+        with open(weights_path, "rb") as _f:
+            for _chunk in iter(lambda: _f.read(8192), b""):
+                _h.update(_chunk)
+        weights_hash = _h.hexdigest()
+        model_handle = ModelHandle(
+            name         = args.model,
+            architecture = {},       # filled by ModelRegistry at load time
+            weights_path = weights_path,
+            weights_hash = weights_hash,
+            dataset_id   = "cifar10",
+        )
+        model_handle.load()
+        log.info("DNN model loaded     : %s  hash=%s…", args.model, weights_hash[:16])
+
     # ── Consensus engine ──────────────────────────────────────────────────────
     engine = ConsensusEngine(
         node_service = svc,
         node_id      = node_id,
-        node_type    = "pos",   # "dnn" when model loading is wired
+        node_type    = node_type,
+        model        = model_handle,
         f            = effective_f,
     )
     engine.attach_p2p(p2p)
