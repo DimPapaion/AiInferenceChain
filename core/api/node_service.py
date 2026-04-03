@@ -5,16 +5,16 @@ Every API route (REST and future P2P) reads/writes through this object.
 It owns:
   - Chain          — the committed ledger
   - Mempool        — pending transactions
-  - known_peers    — set of peer endpoints for gossip (populated by P2P layer later)
+  - ChainDB        — optional SQLite persistence (None = in-memory only)
+  - known_peers    — set of peer endpoints for gossip
 
 Thread/async safety: all mutations are protected by asyncio.Lock.
-The consensus engine (block production loop) will be wired in when the P2P
-layer is added; for now callers can trigger manual block sealing via seal_block().
 """
 
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Optional
 
 from core.blockchain.block import Block, BlockHeader, BlockType, ConsensusProof
@@ -25,28 +25,31 @@ from core.blockchain.mempool import Mempool
 from core.blockchain.transaction import Transaction, TxType
 from core.blockchain.utils import compute_merkle_root, now
 
+log = logging.getLogger(__name__)
+
 
 class NodeService:
     """
-    Singleton service wiring Chain + Mempool together.
+    Singleton service wiring Chain + Mempool + optional DB together.
     One instance per running node process.
     """
 
-    def __init__(self, chain: Chain, mempool: Optional[Mempool] = None) -> None:
-        self.chain    = chain
-        self.mempool  = mempool or Mempool()
-        self._lock    = asyncio.Lock()
-        self.peers: set[str] = set()   # peer base URLs, e.g. "http://1.2.3.4:8000"
+    def __init__(
+        self,
+        chain:   Chain,
+        mempool: Optional[Mempool] = None,
+        db=None,        # Optional[ChainDB] — import avoided to keep tests light
+    ) -> None:
+        self.chain   = chain
+        self.mempool = mempool or Mempool()
+        self.db      = db       # ChainDB | None
+        self._lock   = asyncio.Lock()
+        self.peers: set[str] = set()
 
     # ── Transaction submission ─────────────────────────────────────────────────
 
     async def submit_tx(self, tx: Transaction) -> dict:
-        """
-        Accept a transaction into the mempool.
-        Returns {"accepted": bool, "tx_id": str, "reason": str|None}
-        """
         async with self._lock:
-            # Basic nonce validation against current chain state
             expected_nonce = self.chain.state.nonce_of(tx.sender) + 1
             if tx.nonce != expected_nonce:
                 return {
@@ -62,25 +65,18 @@ class NodeService:
             }
 
     def get_tx(self, tx_id: str) -> Optional[dict]:
-        """
-        Look up a transaction: mempool (pending) or chain (confirmed).
-        Returns serialised tx dict with a 'status' field, or None.
-        """
-        # 1. Check mempool first
         pending = self.mempool.get_tx(tx_id)
         if pending:
             d = pending.to_dict()
             d["status"] = "pending"
             return d
-
-        # 2. Scan chain blocks (most-recent-first)
         for block in reversed(self.chain.blocks):
             for tx in block.all_transactions:
                 if tx.tx_id == tx_id:
                     d = tx.to_dict()
-                    d["status"]        = "confirmed"
-                    d["block_height"]  = block.height
-                    d["block_hash"]    = block.hash
+                    d["status"]       = "confirmed"
+                    d["block_height"] = block.height
+                    d["block_hash"]   = block.hash
                     return d
         return None
 
@@ -119,26 +115,18 @@ class NodeService:
     def pos_validators(self) -> list[dict]:
         return [n.to_dict() for n in self.chain.state.pos_validators()]
 
-    # ── Inference queries ──────────────────────────────────────────────────────
-
     def get_inference_result(self, request_id: str) -> Optional[dict]:
         return self.chain.get_inference_result(request_id)
 
     # ── Block sealing (dev / single-node mode) ─────────────────────────────────
 
     async def seal_block(self, proposer_id: str) -> Optional[Block]:
-        """
-        Manually seal a PoS block from mempool contents.
-        Used in dev/single-node mode and by the consensus engine.
-        In real multi-node mode, the consensus engine calls this after 2f+1 votes.
-        """
         async with self._lock:
             account_nonces = {
                 addr: self.chain.state.nonce_of(addr)
                 for addr in self.chain.state.nonces
             }
-            simple_txs = self.mempool.select_simple(account_nonces, MAX_SIMPLE_TXS)
-
+            simple_txs  = self.mempool.select_simple(account_nonces, MAX_SIMPLE_TXS)
             merkle_root = compute_merkle_root(simple_txs)
             header = BlockHeader(
                 prev_hash   = self.chain.tip.hash,
@@ -149,7 +137,6 @@ class NodeService:
                 block_type  = BlockType.POS,
                 view        = 0,
             )
-            # In dev mode we use a single-signer proof (f=0 effectively)
             proof = ConsensusProof(
                 consensus_type = BlockType.POS,
                 view           = 0,
@@ -159,36 +146,38 @@ class NodeService:
                     (proposer_id, "dev"),
                 ],
             )
-            block = Block(
-                header          = header,
-                simple_txs      = simple_txs,
-                consensus_proof = proof,
-            )
+            block = Block(header=header, simple_txs=simple_txs, consensus_proof=proof)
             try:
                 self.chain.append(block)
-                # Clean up mempool
-                committed_ids = [tx.tx_id for tx in simple_txs]
-                self.mempool.remove(committed_ids)
+                self.mempool.remove([tx.tx_id for tx in simple_txs])
+                self._persist_block(block)
                 return block
             except ValueError:
                 return None
 
-    # ── P2P block ingestion ───────────────────────────────────────────────────
+    # ── P2P block ingestion ────────────────────────────────────────────────────
 
     async def ingest_block(self, block: Block) -> dict:
-        """
-        Accept a block broadcast by a peer.
-        Returns {"accepted": bool, "reason": str|None}
-        """
         async with self._lock:
             try:
                 self.chain.append(block)
-                # Remove committed txs from mempool
-                committed_ids = [tx.tx_id for tx in block.all_transactions]
-                self.mempool.remove(committed_ids)
+                self.mempool.remove([tx.tx_id for tx in block.all_transactions])
+                self._persist_block(block)
                 return {"accepted": True, "reason": None}
             except ValueError as e:
                 return {"accepted": False, "reason": str(e)}
+
+    # ── Persistence helper ────────────────────────────────────────────────────
+
+    def _persist_block(self, block: Block) -> None:
+        """Save block + state to DB if persistence is enabled."""
+        if self.db is None:
+            return
+        try:
+            self.db.save_block(block)
+            self.db.save_state(self.chain.state)
+        except Exception as e:
+            log.error("DB write failed at height %d: %s", block.height, e)
 
     # ── Peer management ────────────────────────────────────────────────────────
 
@@ -199,19 +188,34 @@ class NodeService:
         self.peers.discard(base_url.rstrip("/"))
 
 
-# ── Factory ───────────────────────────────────────────────────────────────────
+# ── Factories ─────────────────────────────────────────────────────────────────
 
 def create_node_service(
     initial_allocations: dict[str, float] | None = None,
-    initial_nodes: list[dict] | None = None,
-    f: int = DEFAULT_F,
+    initial_nodes:       list[dict] | None = None,
+    f:                   int = DEFAULT_F,
 ) -> NodeService:
-    """
-    Bootstrap a fresh NodeService with a genesis block.
-    """
+    """Bootstrap an in-memory NodeService (no persistence). Used in tests."""
     genesis = create_genesis_block(
         initial_allocations=initial_allocations,
         initial_nodes=initial_nodes,
     )
     chain = Chain(genesis, f=f)
     return NodeService(chain=chain)
+
+
+def create_persistent_node_service(
+    db_path:             str,
+    initial_allocations: dict[str, float] | None = None,
+    initial_nodes:       list[dict] | None = None,
+    f:                   int = DEFAULT_F,
+) -> NodeService:
+    """Bootstrap a NodeService backed by SQLite persistence."""
+    from core.storage.db import open_or_create_chain
+    chain, db = open_or_create_chain(
+        db_path             = db_path,
+        initial_allocations = initial_allocations,
+        initial_nodes       = initial_nodes,
+        f                   = f,
+    )
+    return NodeService(chain=chain, db=db)

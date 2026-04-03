@@ -10,8 +10,11 @@ Or run directly via node_runner.py.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from core.api.node_service import NodeService
 from core.api.routes import chain, state, tx, inference, p2p, dev
@@ -23,6 +26,7 @@ def create_app(
     endpoint:     str  = "http://0.0.0.0:8000",
     dev_mode:     bool = True,
     cors_origins: list[str] | None = None,
+    image_store=None,
 ) -> FastAPI:
     """
     Build and return the FastAPI application.
@@ -55,6 +59,7 @@ def create_app(
     app.state.node_service = node_service
     app.state.node_id      = node_id
     app.state.endpoint     = endpoint
+    app.state.image_store  = image_store
 
     # ── Routes ────────────────────────────────────────────────────────────────
     app.include_router(chain.router)
@@ -74,5 +79,10 @@ def create_app(
             "node_id": node_id,
             "docs":    "/docs",
         }
+
+    # ── Frontend dashboard (served at /ui/) ───────────────────────────────────
+    frontend_dir = Path(__file__).parent.parent.parent / "frontend"
+    if frontend_dir.is_dir():
+        app.mount("/ui", StaticFiles(directory=str(frontend_dir), html=True), name="ui")
 
     return app

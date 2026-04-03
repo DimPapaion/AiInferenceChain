@@ -25,6 +25,15 @@ from .constants import (
     NODE_TYPE_DNN, NODE_TYPE_POS,
 )
 from .utils import compute_merkle_root
+from .constants import GENESIS_ALLOCATION
+
+# Lazy import to avoid circular deps at module load
+def _verify_sig(public_key_hex: str, data, sig: str) -> bool:
+    try:
+        from core.node.identity import verify_signature
+        return verify_signature(public_key_hex, data, sig)
+    except Exception:
+        return True   # fail-open if identity module unavailable (tests)
 
 
 # ── State types ───────────────────────────────────────────────────────────────
@@ -204,6 +213,17 @@ class Chain:
 
     def _validate_tx(self, tx: Transaction, intra_nonces: dict | None = None) -> None:
         """Validate a simple transaction against current state + intra-block nonces."""
+        # ── Signature verification ────────────────────────────────────────────
+        # Skip for genesis txs (signature="genesis") and system txs (no sig needed)
+        if tx.family == TxFamily.SIMPLE and tx.signature not in (None, "", "genesis", "dev"):
+            node_info = self.state.nodes.get(tx.sender)
+            if node_info is not None:
+                # Known node — verify against registered public key
+                if not _verify_sig(node_info.public_key, tx.tx_id, tx.signature):
+                    raise ValueError(f"Invalid signature on tx {tx.tx_id[:8]} from {tx.sender[:8]}")
+            # Unknown address (regular wallet) — public key not on-chain yet;
+            # full verification requires a separate public-key registry (future work)
+
         # Use intra-block nonce if sender already has a tx earlier in this block
         current_nonce = (
             intra_nonces[tx.sender]

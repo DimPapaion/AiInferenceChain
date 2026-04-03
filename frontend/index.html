@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>InferenceChain Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Courier New', monospace; }
+    .card { @apply bg-gray-900 border border-gray-700 rounded-lg p-4; }
+    .badge-green  { @apply bg-green-900 text-green-300 text-xs px-2 py-0.5 rounded; }
+    .badge-yellow { @apply bg-yellow-900 text-yellow-300 text-xs px-2 py-0.5 rounded; }
+    .badge-blue   { @apply bg-blue-900 text-blue-300 text-xs px-2 py-0.5 rounded; }
+    .input        { @apply w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500; }
+    .btn          { @apply px-4 py-2 rounded text-sm font-semibold disabled:opacity-50; }
+    .btn-blue     { @apply btn bg-blue-600 hover:bg-blue-700 text-white; }
+    .btn-green    { @apply btn bg-green-600 hover:bg-green-700 text-white; }
+    .btn-red      { @apply btn bg-red-600 hover:bg-red-700 text-white; }
+    .label        { @apply block text-xs text-gray-400 mb-1; }
+    .section-title { @apply text-sm font-bold text-blue-400 mb-3 uppercase tracking-wider; }
+    .mono-val     { @apply font-mono text-xs text-gray-300 break-all; }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-200 min-h-screen">
+
+<!-- ── Top bar ──────────────────────────────────────────────────────────── -->
+<header class="bg-gray-900 border-b border-gray-700 px-6 py-3 flex items-center justify-between">
+  <div class="flex items-center gap-3">
+    <span class="text-blue-400 font-bold text-xl">⛓ InferenceChain</span>
+    <span id="net-badge" class="badge-yellow">connecting…</span>
+  </div>
+  <div class="flex items-center gap-4 text-xs text-gray-400">
+    <span>Node: <span id="hdr-node-id" class="text-gray-200">—</span></span>
+    <span>Height: <span id="hdr-height" class="text-green-400 font-bold">—</span></span>
+    <input id="api-url" class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs w-52 focus:outline-none"
+           placeholder="http://localhost:8000" value="http://localhost:8000" />
+    <button onclick="connectAndRefresh()" class="btn-blue text-xs px-3 py-1">Connect</button>
+  </div>
+</header>
+
+<!-- ── Main grid ─────────────────────────────────────────────────────────── -->
+<main class="grid grid-cols-12 gap-4 p-4">
+
+  <!-- ── Left column (chain + blocks) ──────────────────────────────────── -->
+  <section class="col-span-12 md:col-span-5 space-y-4">
+
+    <!-- Chain stats -->
+    <div class="card">
+      <p class="section-title">Chain Status</p>
+      <div class="grid grid-cols-2 gap-3 text-sm">
+        <div>
+          <p class="label">Height</p>
+          <p id="stat-height" class="text-2xl font-bold text-green-400">—</p>
+        </div>
+        <div>
+          <p class="label">Pending Txs</p>
+          <p id="stat-pending" class="text-2xl font-bold text-yellow-400">—</p>
+        </div>
+        <div class="col-span-2">
+          <p class="label">Tip Hash</p>
+          <p id="stat-tip" class="mono-val">—</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent blocks -->
+    <div class="card">
+      <div class="flex items-center justify-between mb-3">
+        <p class="section-title mb-0">Recent Blocks</p>
+        <button onclick="loadChain()" class="text-xs text-blue-400 hover:text-blue-300">↻ refresh</button>
+      </div>
+      <div id="block-list" class="space-y-2 max-h-72 overflow-y-auto pr-1">
+        <p class="text-gray-500 text-xs">No blocks loaded.</p>
+      </div>
+    </div>
+
+    <!-- Active nodes -->
+    <div class="card">
+      <div class="flex items-center justify-between mb-3">
+        <p class="section-title mb-0">Active Nodes</p>
+        <button onclick="loadNodes()" class="text-xs text-blue-400 hover:text-blue-300">↻ refresh</button>
+      </div>
+      <div id="node-list" class="space-y-2 max-h-48 overflow-y-auto pr-1 text-xs">
+        <p class="text-gray-500">—</p>
+      </div>
+    </div>
+
+    <!-- Peers -->
+    <div class="card">
+      <div class="flex items-center justify-between mb-3">
+        <p class="section-title mb-0">Peers</p>
+        <button onclick="loadPeers()" class="text-xs text-blue-400 hover:text-blue-300">↻ refresh</button>
+      </div>
+      <div id="peer-list" class="space-y-1 text-xs text-gray-400">
+        <p class="text-gray-500">—</p>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ── Right column (actions) ─────────────────────────────────────────── -->
+  <section class="col-span-12 md:col-span-7 space-y-4">
+
+    <!-- Account lookup -->
+    <div class="card">
+      <p class="section-title">Account Lookup</p>
+      <div class="flex gap-2">
+        <input id="lookup-addr" class="input flex-1" placeholder="address (hex)" />
+        <button onclick="lookupAccount()" class="btn-blue">Lookup</button>
+      </div>
+      <div id="lookup-result" class="mt-3 hidden">
+        <div class="grid grid-cols-3 gap-2 text-sm mt-2">
+          <div>
+            <p class="label">Balance</p>
+            <p id="lookup-balance" class="font-bold text-green-400">—</p>
+          </div>
+          <div>
+            <p class="label">Stake</p>
+            <p id="lookup-stake" class="font-bold text-blue-400">—</p>
+          </div>
+          <div>
+            <p class="label">Nonce</p>
+            <p id="lookup-nonce" class="font-bold text-gray-300">—</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Transfer -->
+    <div class="card">
+      <p class="section-title">Send Transfer</p>
+      <div class="grid grid-cols-2 gap-2">
+        <div>
+          <label class="label">From (sender address)</label>
+          <input id="tx-sender" class="input" placeholder="sender hex address" />
+        </div>
+        <div>
+          <label class="label">To (recipient address)</label>
+          <input id="tx-to" class="input" placeholder="recipient hex address" />
+        </div>
+        <div>
+          <label class="label">Amount (INFER)</label>
+          <input id="tx-amount" type="number" class="input" placeholder="100" />
+        </div>
+        <div>
+          <label class="label">Fee (INFER)</label>
+          <input id="tx-fee" type="number" class="input" placeholder="1" />
+        </div>
+        <div>
+          <label class="label">Nonce</label>
+          <input id="tx-nonce" type="number" class="input" placeholder="1" />
+        </div>
+        <div>
+          <label class="label">Signature (hex, or "dev")</label>
+          <input id="tx-sig" class="input" placeholder="dev" value="dev" />
+        </div>
+      </div>
+      <button onclick="sendTransfer()" class="btn-green mt-3">Submit Transfer</button>
+      <p id="tx-result" class="text-xs mt-2 text-gray-400"></p>
+    </div>
+
+    <!-- Inference request -->
+    <div class="card">
+      <p class="section-title">Submit Inference Request</p>
+      <div class="space-y-2">
+        <div>
+          <label class="label">Upload image (gets stored by hash)</label>
+          <div class="flex gap-2">
+            <input type="file" id="img-file" class="text-xs text-gray-300 file:mr-2 file:bg-blue-700 file:border-0 file:rounded file:text-white file:px-2 file:py-1 file:text-xs flex-1" />
+            <button onclick="uploadImage()" class="btn-blue text-xs">Upload</button>
+          </div>
+          <p id="img-hash" class="mono-val mt-1 text-gray-500">No image uploaded.</p>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="label">Image Hash (auto-filled after upload)</label>
+            <input id="inf-hash" class="input" placeholder="sha256 hex" />
+          </div>
+          <div>
+            <label class="label">Sender address</label>
+            <input id="inf-sender" class="input" placeholder="hex address" />
+          </div>
+          <div>
+            <label class="label">Nonce</label>
+            <input id="inf-nonce" type="number" class="input" placeholder="1" />
+          </div>
+          <div>
+            <label class="label">Fee</label>
+            <input id="inf-fee" type="number" class="input" placeholder="10" />
+          </div>
+        </div>
+        <button onclick="submitInference()" class="btn-green">Submit Inference Request</button>
+        <p id="inf-result" class="text-xs mt-1 text-gray-400"></p>
+      </div>
+    </div>
+
+    <!-- Inference result lookup -->
+    <div class="card">
+      <p class="section-title">Query Inference Result</p>
+      <div class="flex gap-2">
+        <input id="inf-req-id" class="input flex-1" placeholder="request_id (hex)" />
+        <button onclick="queryInference()" class="btn-blue">Query</button>
+      </div>
+      <div id="inf-query-result" class="mt-2 text-xs text-gray-400">—</div>
+    </div>
+
+    <!-- Dev seal -->
+    <div class="card">
+      <p class="section-title">Dev Tools</p>
+      <div class="flex gap-3 items-center">
+        <input id="dev-proposer" class="input w-64" placeholder="proposer node_id" />
+        <button onclick="devSeal()" class="btn-red">Seal Block</button>
+      </div>
+      <p id="dev-result" class="text-xs mt-2 text-gray-400"></p>
+    </div>
+
+  </section>
+
+</main>
+
+<!-- ── Event log ─────────────────────────────────────────────────────────── -->
+<footer class="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-700">
+  <div class="flex items-center px-4 py-1 gap-2">
+    <span class="text-xs text-gray-500">Log:</span>
+    <div id="log" class="text-xs text-gray-400 overflow-x-auto whitespace-nowrap flex-1">Ready.</div>
+    <button onclick="document.getElementById('log').textContent=''" class="text-xs text-gray-600 hover:text-gray-400">clear</button>
+  </div>
+</footer>
+
+<script>
+// ── Utilities ────────────────────────────────────────────────────────────────
+
+let BASE = 'http://localhost:8000';
+
+function api(path) { return BASE + path; }
+
+function log(msg, color='text-gray-400') {
+  const el = document.getElementById('log');
+  el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  el.className = `text-xs ${color} overflow-x-auto whitespace-nowrap flex-1`;
+}
+
+async function GET(path) {
+  const r = await fetch(api(path));
+  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  return r.json();
+}
+
+async function POST(path, body) {
+  const r = await fetch(api(path), {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  return r.json();
+}
+
+function short(h, n=12) { return h ? h.slice(0,n)+'…' : '—'; }
+function fmt(n) { return typeof n === 'number' ? n.toLocaleString() : (n ?? '—'); }
+
+// ── Bootstrap ────────────────────────────────────────────────────────────────
+
+async function connectAndRefresh() {
+  BASE = document.getElementById('api-url').value.replace(/\/$/, '');
+  try {
+    await Promise.all([loadChain(), loadNodes(), loadPeers()]);
+    document.getElementById('net-badge').textContent = 'connected';
+    document.getElementById('net-badge').className = 'badge-green';
+    log('Connected to ' + BASE, 'text-green-400');
+  } catch(e) {
+    document.getElementById('net-badge').textContent = 'offline';
+    document.getElementById('net-badge').className = 'badge-yellow';
+    log('Connection failed: ' + e.message, 'text-red-400');
+  }
+}
+
+// ── Chain + blocks ────────────────────────────────────────────────────────────
+
+async function loadChain() {
+  const tip = await GET('/chain/tip');
+  const height = tip.height ?? tip.header?.height ?? '—';
+  document.getElementById('stat-height').textContent = fmt(height);
+  document.getElementById('stat-tip').textContent = tip.hash ?? '—';
+  document.getElementById('hdr-height').textContent = fmt(height);
+
+  const info = await GET('/').catch(() => ({}));
+  document.getElementById('hdr-node-id').textContent = short(info.node_id, 8);
+
+  // Load up to last 10 blocks
+  const list = document.getElementById('block-list');
+  list.innerHTML = '';
+  for (let h = Math.max(0, (height ?? 0)); h >= Math.max(0, (height ?? 0) - 9); h--) {
+    try {
+      const b = await GET(`/chain/block/${h}`);
+      const header = b.header ?? b;
+      list.innerHTML += `
+        <div class="flex items-center justify-between bg-gray-800 rounded px-3 py-2 text-xs">
+          <span class="text-green-400 font-bold">#${header.height ?? '?'}</span>
+          <span class="badge-blue">${(header.block_type ?? 'POS').replace('BlockType.','')}</span>
+          <span class="text-gray-400">txs: ${b.tx_count ?? 0}</span>
+          <span class="mono-val text-gray-500">${short(b.hash ?? '', 16)}</span>
+        </div>`;
+    } catch(_) { break; }
+  }
+
+  // Pending tx count from mempool
+  try {
+    const mp = await GET('/chain/mempool');
+    document.getElementById('stat-pending').textContent = fmt(mp.count ?? mp.length ?? 0);
+  } catch(_) {}
+}
+
+// ── Nodes ─────────────────────────────────────────────────────────────────────
+
+async function loadNodes() {
+  const nodes = await GET('/state/nodes');
+  const list = document.getElementById('node-list');
+  if (!nodes.length) { list.innerHTML = '<p class="text-gray-500">No active nodes.</p>'; return; }
+  list.innerHTML = nodes.map(n => `
+    <div class="flex items-center justify-between bg-gray-800 rounded px-3 py-2">
+      <span class="text-gray-200">${short(n.node_id, 12)}</span>
+      <span class="${n.node_type === 'dnn' ? 'badge-blue' : 'badge-green'}">${n.node_type ?? 'pos'}</span>
+      <span class="text-yellow-400">stake ${fmt(n.stake ?? 0)}</span>
+      <span class="text-purple-400">rep ${(n.reputation ?? 0).toFixed(3)}</span>
+    </div>`).join('');
+}
+
+// ── Peers ─────────────────────────────────────────────────────────────────────
+
+async function loadPeers() {
+  const data = await GET('/p2p/peers');
+  const list = document.getElementById('peer-list');
+  const peers = Array.isArray(data) ? data : (data.peers ?? []);
+  if (!peers.length) { list.innerHTML = '<p class="text-gray-500">No known peers.</p>'; return; }
+  list.innerHTML = peers.map(p => {
+    const url = typeof p === 'string' ? p : (p.endpoint ?? p.url ?? JSON.stringify(p));
+    return `<div class="flex items-center gap-2">
+      <span class="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+      <span>${url}</span>
+    </div>`;
+  }).join('');
+}
+
+// ── Account lookup ────────────────────────────────────────────────────────────
+
+async function lookupAccount() {
+  const addr = document.getElementById('lookup-addr').value.trim();
+  if (!addr) { log('Enter an address.', 'text-yellow-400'); return; }
+  try {
+    const [bal, stake, nonce] = await Promise.all([
+      GET(`/state/balance/${addr}`),
+      GET(`/state/stake/${addr}`),
+      GET(`/state/nonce/${addr}`),
+    ]);
+    document.getElementById('lookup-balance').textContent = fmt(bal.balance ?? bal);
+    document.getElementById('lookup-stake').textContent   = fmt(stake.stake ?? stake);
+    document.getElementById('lookup-nonce').textContent   = fmt(nonce.nonce ?? nonce);
+    document.getElementById('lookup-result').classList.remove('hidden');
+    log(`Loaded account ${addr.slice(0,8)}…`, 'text-green-400');
+  } catch(e) { log('Lookup failed: ' + e.message, 'text-red-400'); }
+}
+
+// ── Transfer ──────────────────────────────────────────────────────────────────
+
+async function sendTransfer() {
+  const body = {
+    sender:    document.getElementById('tx-sender').value.trim(),
+    recipient: document.getElementById('tx-to').value.trim(),
+    amount:    parseFloat(document.getElementById('tx-amount').value),
+    fee:       parseFloat(document.getElementById('tx-fee').value) || 1,
+    nonce:     parseInt(document.getElementById('tx-nonce').value) || 1,
+    signature: document.getElementById('tx-sig').value.trim() || 'dev',
+  };
+  const el = document.getElementById('tx-result');
+  try {
+    const res = await POST('/tx/transfer', body);
+    el.textContent = res.accepted
+      ? `✓ Accepted  tx_id: ${short(res.tx_id)}`
+      : `✗ Rejected: ${res.reason}`;
+    el.className = `text-xs mt-2 ${res.accepted ? 'text-green-400' : 'text-red-400'}`;
+    log(res.accepted ? 'Transfer submitted' : 'Transfer rejected: ' + res.reason,
+        res.accepted ? 'text-green-400' : 'text-red-400');
+  } catch(e) {
+    el.textContent = 'Error: ' + e.message;
+    el.className = 'text-xs mt-2 text-red-400';
+    log(e.message, 'text-red-400');
+  }
+}
+
+// ── Image upload + inference ──────────────────────────────────────────────────
+
+async function uploadImage() {
+  const fileInput = document.getElementById('img-file');
+  if (!fileInput.files.length) { log('Select a file first.', 'text-yellow-400'); return; }
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+  try {
+    const r = await fetch(api('/inference/image'), { method: 'POST', body: formData });
+    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+    const data = await r.json();
+    document.getElementById('img-hash').textContent = data.image_hash;
+    document.getElementById('inf-hash').value = data.image_hash;
+    log(`Image stored: ${data.image_hash.slice(0,12)}… (${data.size_bytes} bytes)`, 'text-green-400');
+  } catch(e) { log('Upload failed: ' + e.message, 'text-red-400'); }
+}
+
+async function submitInference() {
+  const body = {
+    image_hash: document.getElementById('inf-hash').value.trim(),
+    sender:     document.getElementById('inf-sender').value.trim(),
+    nonce:      parseInt(document.getElementById('inf-nonce').value) || 1,
+    fee:        parseFloat(document.getElementById('inf-fee').value) || 10,
+    signature:  'dev',
+    model_hint: null,
+  };
+  const el = document.getElementById('inf-result');
+  try {
+    const res = await POST('/inference/request', body);
+    el.textContent = res.accepted
+      ? `✓ Accepted  request_id: ${short(res.request_id)}`
+      : `✗ Rejected: ${res.reason}`;
+    el.className = `text-xs mt-1 ${res.accepted ? 'text-green-400' : 'text-red-400'}`;
+    if (res.request_id) document.getElementById('inf-req-id').value = res.request_id;
+    log(res.accepted ? 'Inference submitted' : 'Rejected: ' + res.reason,
+        res.accepted ? 'text-green-400' : 'text-red-400');
+  } catch(e) {
+    el.textContent = 'Error: ' + e.message;
+    el.className = 'text-xs mt-1 text-red-400';
+    log(e.message, 'text-red-400');
+  }
+}
+
+async function queryInference() {
+  const reqId = document.getElementById('inf-req-id').value.trim();
+  if (!reqId) { log('Enter a request_id.', 'text-yellow-400'); return; }
+  const el = document.getElementById('inf-query-result');
+  try {
+    const res = await GET(`/inference/${reqId}`);
+    if (res.status === 'pending') {
+      el.innerHTML = '<span class="text-yellow-400">⏳ Pending — awaiting QoI round</span>';
+    } else if (res.status === 'confirmed') {
+      el.innerHTML = `
+        <div class="space-y-1">
+          <p><span class="text-gray-400">Status:</span> <span class="text-green-400">✓ Confirmed</span></p>
+          <p><span class="text-gray-400">Class:</span> <span class="text-blue-400 font-bold">${res.final_class ?? '—'}</span></p>
+          <p><span class="text-gray-400">Confidence:</span> <span class="text-blue-300">${res.confidence != null ? (res.confidence * 100).toFixed(1) + '%' : '—'}</span></p>
+          <p><span class="text-gray-400">Validators:</span> ${(res.participating_nodes ?? []).length}</p>
+        </div>`;
+    }
+    log('Query done', 'text-green-400');
+  } catch(e) {
+    el.textContent = 'Not found or error: ' + e.message;
+    el.className = 'text-xs mt-2 text-red-400';
+    log(e.message, 'text-red-400');
+  }
+}
+
+// ── Dev seal ─────────────────────────────────────────────────────────────────
+
+async function devSeal() {
+  const proposer = document.getElementById('dev-proposer').value.trim() || 'dev-proposer';
+  const el = document.getElementById('dev-result');
+  try {
+    const res = await POST('/dev/seal', { proposer_id: proposer });
+    el.textContent = res.hash
+      ? `✓ Block #${res.height} sealed  hash: ${short(res.hash)}`
+      : JSON.stringify(res);
+    el.className = 'text-xs mt-2 text-green-400';
+    await loadChain();
+    log(`Block sealed at height ${res.height}`, 'text-green-400');
+  } catch(e) {
+    el.textContent = 'Error: ' + e.message;
+    el.className = 'text-xs mt-2 text-red-400';
+    log(e.message, 'text-red-400');
+  }
+}
+
+// ── Auto-refresh ──────────────────────────────────────────────────────────────
+
+window.onload = () => connectAndRefresh();
+setInterval(() => {
+  if (document.getElementById('net-badge').textContent === 'connected') {
+    loadChain().catch(() => {});
+  }
+}, 5000);
+</script>
+</body>
+</html>

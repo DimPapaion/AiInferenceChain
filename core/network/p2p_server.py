@@ -77,6 +77,9 @@ class P2PServer:
         # Bootstrap peer URLs to connect to on startup
         self._bootstrap_urls: list[str] = []
 
+        # Peer discovery (set via attach_discovery)
+        self._discovery = None
+
         # Consensus engine (set via attach_consensus)
         self._consensus_engine = None
 
@@ -85,6 +88,14 @@ class P2PServer:
         self._server = None
 
     # ── Public interface ──────────────────────────────────────────────────────
+
+    def attach_discovery(self, discovery) -> None:
+        """Wire a PeerDiscovery instance for persistent peer tracking."""
+        self._discovery = discovery
+        # Seed bootstrap URLs from the discovery list
+        for url in discovery.seed_peers():
+            if url not in self._bootstrap_urls:
+                self._bootstrap_urls.append(url)
 
     def attach_consensus(self, engine) -> None:
         """Wire the ConsensusEngine so incoming consensus msgs are routed to it."""
@@ -377,6 +388,8 @@ class P2PServer:
                 continue   # don't connect to ourselves
             if url not in self.svc.peers:
                 self.svc.add_peer(url)
+                if self._discovery:
+                    self._discovery.add(url)
                 asyncio.create_task(self._connect_outbound(url))
 
     # ── Broadcast helpers ─────────────────────────────────────────────────────

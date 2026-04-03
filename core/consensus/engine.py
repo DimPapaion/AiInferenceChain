@@ -333,24 +333,32 @@ class ConsensusEngine:
         if sleep_for > 0:
             await asyncio.sleep(sleep_for)
 
+    def attach_image_store(self, image_store) -> None:
+        """Wire the content-addressed image store (ImageStore)."""
+        self._image_store = image_store
+
     async def _run_inference(self, image_hash: str) -> list[float]:
         """
         Run the DNN model on the image identified by image_hash.
-        Returns a probability vector.
-
-        In a real deployment the image tensor is retrieved from a content-
-        addressed store by its hash.  For now we return a uniform distribution
-        as a placeholder — the full inference path is wired when the model
-        serving layer (core/serving/) is added.
+        Retrieves the image tensor from the content-addressed ImageStore,
+        then runs self.model(tensor) to get the probability vector.
+        Falls back to a uniform distribution if the image is missing or
+        the model is unavailable.
         """
-        if self.model is not None:
+        image_store = getattr(self, "_image_store", None)
+        if self.model is not None and image_store is not None:
             try:
-                # model.predict expects an image tensor; placeholder until
-                # content-addressed image retrieval is implemented.
-                return [0.1] * 10
+                tensor = await asyncio.get_event_loop().run_in_executor(
+                    None, image_store.get_tensor, image_hash
+                )
+                if tensor is not None:
+                    probs = self.model.predict(tensor)
+                    return list(probs)
+                else:
+                    log.warning("Image %s not in local store — using uniform probs", image_hash[:12])
             except Exception as e:
-                log.warning("Inference failed: %s", e)
-        # Uniform fallback
+                log.warning("Inference failed for %s: %s", image_hash[:12], e)
+        # Uniform fallback (10 CIFAR-10 classes)
         return [0.1] * 10
 
     async def _wait_for_qoi_commit(self) -> bool:
