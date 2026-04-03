@@ -172,19 +172,16 @@ def cmd_info(args) -> None:
     node     = args.node
 
     print(f"\n  Address    : {addr}")
-    print(f"  Public key : {identity.public_key_hex[:24]}…")
+    print(f"  Public key : {identity.public_key_hex[:24]}...")
     print(f"  Node       : {node}")
     print()
 
     try:
-        bal   = _get(node, f"/state/balance/{addr}")
-        stake = _get(node, f"/state/stake/{addr}")
-        nonce = _get(node, f"/state/nonce/{addr}")
-        rep   = _get(node, f"/state/reputation/{addr}")
-        print(f"  Balance    : {bal.get('balance', bal):>16.4f}  INFER")
-        print(f"  Staked     : {stake.get('stake', stake):>16.4f}  INFER")
-        print(f"  Reputation : {rep.get('reputation', rep):>16.6f}")
-        print(f"  Nonce      : {nonce.get('nonce', nonce)}")
+        acc = _get(node, f"/state/balance/{addr}")
+        print(f"  Balance    : {acc.get('balance', 0):>16.4f}  INFER")
+        print(f"  Staked     : {acc.get('stake', 0):>16.4f}  INFER")
+        print(f"  Reputation : {acc.get('reputation', 0):>16.6f}")
+        print(f"  Nonce      : {acc.get('nonce', 0)}")
     except SystemExit:
         pass
     print()
@@ -194,8 +191,7 @@ def cmd_send(args) -> None:
     identity = _load_wallet(Path(args.wallet))
     node     = args.node
 
-    nonce = _get(node, f"/state/nonce/{identity.address}")
-    nonce = (nonce.get("nonce", nonce) or 0) + 1
+    nonce = _get(node, f"/state/balance/{identity.address}").get("nonce", 0) + 1
 
     to     = args.to_address
     amount = float(args.amount)
@@ -226,8 +222,7 @@ def cmd_stake(args) -> None:
     identity = _load_wallet(Path(args.wallet))
     node     = args.node
 
-    nonce = _get(node, f"/state/nonce/{identity.address}")
-    nonce = (nonce.get("nonce", nonce) or 0) + 1
+    nonce = _get(node, f"/state/balance/{identity.address}").get("nonce", 0) + 1
 
     amount = float(args.amount)
     fee    = float(args.fee)
@@ -256,8 +251,7 @@ def cmd_unstake(args) -> None:
     identity = _load_wallet(Path(args.wallet))
     node     = args.node
 
-    nonce = _get(node, f"/state/nonce/{identity.address}")
-    nonce = (nonce.get("nonce", nonce) or 0) + 1
+    nonce = _get(node, f"/state/balance/{identity.address}").get("nonce", 0) + 1
 
     amount = float(args.amount)
     fee    = float(args.fee)
@@ -286,8 +280,7 @@ def cmd_register(args) -> None:
     identity = _load_wallet(Path(args.wallet))
     node     = args.node
 
-    nonce = _get(node, f"/state/nonce/{identity.address}")
-    nonce = (nonce.get("nonce", nonce) or 0) + 1
+    nonce = _get(node, f"/state/balance/{identity.address}").get("nonce", 0) + 1
 
     endpoint = args.endpoint.rstrip("/")
     fee      = float(args.fee)
@@ -367,16 +360,20 @@ def _die(msg: str) -> None:
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
+def _add_common(s) -> None:
+    """Add --wallet and --node to a subcommand parser."""
+    s.add_argument("--wallet", default=str(DEFAULT_WALLET),
+                   help=f"Wallet file (default: {DEFAULT_WALLET})")
+    s.add_argument("--node",   default=DEFAULT_NODE,
+                   help=f"Node URL (default: {DEFAULT_NODE})")
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog        = "wallet",
         description = "InferenceChain CLI wallet",
         formatter_class = argparse.RawDescriptionHelpFormatter,
     )
-    p.add_argument("--wallet", default=str(DEFAULT_WALLET),
-                   help=f"Wallet file path (default: {DEFAULT_WALLET})")
-    p.add_argument("--node",   default=DEFAULT_NODE,
-                   help=f"Node REST URL (default: {DEFAULT_NODE})")
 
     sub = p.add_subparsers(dest="command", metavar="<command>")
     sub.required = True
@@ -393,38 +390,45 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--out", default=str(DEFAULT_WALLET))
 
     # info
-    sub.add_parser("info", help="Show address, balance, stake, nonce")
+    s = sub.add_parser("info", help="Show address, balance, stake, nonce")
+    _add_common(s)
 
     # send
     s = sub.add_parser("send", help="Send INFER to an address")
     s.add_argument("to_address", metavar="TO")
     s.add_argument("amount",     metavar="AMOUNT", type=float)
     s.add_argument("--fee",      default=1.0, type=float)
+    _add_common(s)
 
     # stake
     s = sub.add_parser("stake", help="Stake INFER tokens")
     s.add_argument("amount", metavar="AMOUNT", type=float)
     s.add_argument("--fee",  default=1.0, type=float)
+    _add_common(s)
 
     # unstake
     s = sub.add_parser("unstake", help="Unstake INFER tokens")
     s.add_argument("amount", metavar="AMOUNT", type=float)
     s.add_argument("--fee",  default=1.0, type=float)
+    _add_common(s)
 
     # register
     s = sub.add_parser("register", help="Register as a PoS validator node")
     s.add_argument("--endpoint", required=True,
                    help="Your node's public REST URL, e.g. http://192.168.1.10:8000")
     s.add_argument("--fee", default=10.0, type=float)
+    _add_common(s)
 
     # tx
     s = sub.add_parser("tx", help="Query a transaction by its ID")
     s.add_argument("tx_id", metavar="TX_ID")
+    s.add_argument("--node", default=DEFAULT_NODE)
 
     # seal (dev)
     s = sub.add_parser("seal", help="[Dev] Manually seal a block on the node")
     s.add_argument("--proposer", default=None,
                    help="Proposer node_id (default: node-<port>)")
+    s.add_argument("--node", default=DEFAULT_NODE)
 
     return p
 

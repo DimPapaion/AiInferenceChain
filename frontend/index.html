@@ -306,15 +306,15 @@ async function loadChain() {
 
   // Pending tx count from mempool
   try {
-    const mp = await GET('/chain/mempool');
-    document.getElementById('stat-pending').textContent = fmt(mp.count ?? mp.length ?? 0);
+    const mp = await GET('/tx/pending');
+    document.getElementById('stat-pending').textContent = fmt(Array.isArray(mp) ? mp.length : 0);
   } catch(_) {}
 }
 
 // ── Nodes ─────────────────────────────────────────────────────────────────────
 
 async function loadNodes() {
-  const nodes = await GET('/state/nodes');
+  const nodes = await GET('/state/nodes/active');
   const list = document.getElementById('node-list');
   if (!nodes.length) { list.innerHTML = '<p class="text-gray-500">No active nodes.</p>'; return; }
   list.innerHTML = nodes.map(n => `
@@ -348,14 +348,11 @@ async function lookupAccount() {
   const addr = document.getElementById('lookup-addr').value.trim();
   if (!addr) { log('Enter an address.', 'text-yellow-400'); return; }
   try {
-    const [bal, stake, nonce] = await Promise.all([
-      GET(`/state/balance/${addr}`),
-      GET(`/state/stake/${addr}`),
-      GET(`/state/nonce/${addr}`),
-    ]);
-    document.getElementById('lookup-balance').textContent = fmt(bal.balance ?? bal);
-    document.getElementById('lookup-stake').textContent   = fmt(stake.stake ?? stake);
-    document.getElementById('lookup-nonce').textContent   = fmt(nonce.nonce ?? nonce);
+    const acc = await GET(`/state/balance/${addr}`);
+    const [bal, stake, nonce] = [acc, acc, acc];
+    document.getElementById('lookup-balance').textContent = fmt(acc.balance ?? 0);
+    document.getElementById('lookup-stake').textContent   = fmt(acc.stake ?? 0);
+    document.getElementById('lookup-nonce').textContent   = fmt(acc.nonce ?? 0);
     document.getElementById('lookup-result').classList.remove('hidden');
     log(`Loaded account ${addr.slice(0,8)}…`, 'text-green-400');
   } catch(e) { log('Lookup failed: ' + e.message, 'text-red-400'); }
