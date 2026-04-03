@@ -132,11 +132,28 @@ class ConsensusEngine:
     # ── Round dispatcher ──────────────────────────────────────────────────────
 
     async def _run_round(self) -> None:
-        """Decide whether to run a QoI round or a PoS round, then run it."""
-        # Check if there is a pending inference request
-        inference_tx = self.svc.mempool.peek_inference()
-        if inference_tx is not None and self.node_type == "dnn" and self.model is not None:
-            await self._run_qoi_round(inference_tx)
+        """
+        Decide whether to run a QoI round or a PoS round, then run it.
+
+        Dispatch rules:
+          1. Inference tx in mempool AND DNN validators are registered/active:
+               → DNN nodes  : run QoI round
+               → PoS nodes  : stand by (sleep one slot) so they don't produce
+                              a competing PoS block at the same height.
+                              The QoI block will arrive via P2P and be ingested.
+          2. No inference tx (or no DNN validators available):
+               → ALL nodes run a PoS round.
+        """
+        inference_tx       = self.svc.mempool.peek_inference()
+        dnn_validators_up  = len(self.svc.chain.state.dnn_validators()) > 0
+
+        if inference_tx is not None and dnn_validators_up:
+            if self.node_type == "dnn" and self.model is not None:
+                await self._run_qoi_round(inference_tx)
+            else:
+                # PoS node: wait one block slot while DNN committee completes QoI.
+                # The committed QoI block arrives via P2P → ingest_block().
+                await asyncio.sleep(BLOCK_TIME_TARGET)
         else:
             await self._run_pos_round()
 
