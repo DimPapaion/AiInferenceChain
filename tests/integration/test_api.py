@@ -252,8 +252,10 @@ def test_p2p_add_and_list_peer(client):
 def test_p2p_remove_peer(client):
     client.post("/p2p/peers/add", json={"url": "http://10.0.0.2:8000"})
     client.delete("/p2p/peers/http://10.0.0.2:8000")
-    peers = client.get("/p2p/peers").json()["peers"]
-    assert "http://10.0.0.2:8000" not in peers
+    # /p2p/peers returns list[dict] when no live P2P server is running
+    peers_raw = client.get("/p2p/peers").json()
+    endpoints = [p.get("endpoint", p) for p in peers_raw]
+    assert "http://10.0.0.2:8000" not in endpoints
 
 
 def test_p2p_ingest_valid_block(client):
