@@ -95,11 +95,14 @@ class PeerConnection:
 
     @property
     def is_alive(self) -> bool:
-        try:
-            return self.ws.open
-        except AttributeError:
-            # websockets 10+ uses .closed instead
-            return not getattr(self.ws, "closed", True)
+        # websockets >= 12.0: use .state (an enum; OPEN has name "OPEN")
+        state = getattr(self.ws, "state", None)
+        if state is not None:
+            return getattr(state, "name", str(state)) == "OPEN"
+        # websockets < 12.0 legacy API
+        if hasattr(self.ws, "open"):
+            return bool(self.ws.open)
+        return not getattr(self.ws, "closed", True)
 
     @property
     def latency_ms(self) -> float:
