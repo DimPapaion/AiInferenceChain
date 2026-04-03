@@ -34,7 +34,7 @@ PREV_HASH = "0" * 64
 
 def make_node(node_id: str, model: str = "resnet20") -> NodeInfo:
     return NodeInfo(
-        node_id=node_id, address=node_id, model_name=model,
+        node_id=node_id, address=node_id, node_type="dnn",
         public_key="aa"*32, endpoint="127.0.0.1:8000", registered_at=0,
     )
 

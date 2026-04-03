@@ -19,8 +19,10 @@ from .transaction import (
     ConsensusResultPayload,
 )
 from .constants import (
-    MIN_STAKE, INFERENCE_REWARD, SLASH_PENALTY,
+    MIN_STAKE, MIN_STAKE_DNN, MIN_STAKE_POS,
+    INFERENCE_REWARD, SLASH_PENALTY,
     DEFAULT_F, INITIAL_REPUTATION, REP_PENALTY,
+    NODE_TYPE_DNN, NODE_TYPE_POS,
 )
 from .utils import compute_merkle_root
 
@@ -29,24 +31,36 @@ from .utils import compute_merkle_root
 
 @dataclass
 class NodeInfo:
-    """Metadata for a registered inference node."""
-    node_id:       str
-    address:       str
-    model_name:    str
-    public_key:    str
-    endpoint:      str
-    registered_at: int           # block height
-    is_active:     bool = True
+    """Metadata for a registered node (DNN or PoS)."""
+    node_id:        str
+    address:        str
+    node_type:      str           # NODE_TYPE_DNN or NODE_TYPE_POS
+    public_key:     str
+    endpoint:       str
+    registered_at:  int           # block height
+    is_active:      bool  = False  # starts False — only True after NODE_ADMITTED
+    pom_verified:   bool  = False  # True after passing PoM (DNN nodes only)
+    pom_block:      int   = -1    # block height when PoM was verified
+    model_name:     str   = ""    # DNN only
+    weights_hash:   str   = ""    # DNN only
+    dataset_id:     str   = ""    # DNN only
+    architecture:   dict  = field(default_factory=dict)  # DNN only
 
     def to_dict(self) -> dict:
         return {
             "node_id":       self.node_id,
             "address":       self.address,
-            "model_name":    self.model_name,
+            "node_type":     self.node_type,
             "public_key":    self.public_key,
             "endpoint":      self.endpoint,
             "registered_at": self.registered_at,
             "is_active":     self.is_active,
+            "pom_verified":  self.pom_verified,
+            "pom_block":     self.pom_block,
+            "model_name":    self.model_name,
+            "weights_hash":  self.weights_hash,
+            "dataset_id":    self.dataset_id,
+            "architecture":  self.architecture,
         }
 
 
@@ -83,6 +97,7 @@ class ChainState:
     contracts:     dict[str, ContractInfo] = field(default_factory=dict)
     inference_log: dict[str, dict]         = field(default_factory=dict)
     reputations:   dict[str, float]        = field(default_factory=dict)
+    pom_states:    dict[str, dict]         = field(default_factory=dict)  # node_id → pom tracking
 
     def balance_of(self, address: str) -> float:
         return self.balances.get(address, 0.0)
@@ -99,9 +114,24 @@ class ChainState:
     def active_nodes(self) -> list[NodeInfo]:
         return [n for n in self.nodes.values() if n.is_active]
 
+    def dnn_validators(self) -> list[NodeInfo]:
+        """Active DNN nodes eligible for QoI rounds."""
+        return [
+            n for n in self.active_nodes()
+            if n.node_type == NODE_TYPE_DNN
+            and self.stake_of(n.address) >= MIN_STAKE_DNN
+        ]
+
+    def pos_validators(self) -> list[NodeInfo]:
+        """All active nodes (DNN + PoS) eligible for PoS rounds."""
+        return [
+            n for n in self.active_nodes()
+            if self.stake_of(n.address) >= MIN_STAKE_POS
+        ]
+
     def validator_set(self) -> list[NodeInfo]:
-        """Nodes eligible to participate in consensus (stake >= MIN_STAKE)."""
-        return [n for n in self.active_nodes() if self.stake_of(n.address) >= MIN_STAKE]
+        """All active nodes eligible for any consensus (PoS floor)."""
+        return self.pos_validators()
 
 
 # ── Chain ─────────────────────────────────────────────────────────────────────
@@ -266,21 +296,102 @@ class Chain:
                 self.state.nonces[tx.sender] = tx.nonce
 
             case TxType.NODE_REGISTER:
+                # Legacy / genesis registration — treated as a PoS node, auto-admitted
                 p = tx.payload
                 self.state.nodes[tx.sender] = NodeInfo(
                     node_id       = tx.sender,
                     address       = tx.sender,
-                    model_name    = p.model_name,
+                    node_type     = NODE_TYPE_POS,
                     public_key    = p.public_key,
                     endpoint      = p.endpoint,
                     registered_at = height,
+                    is_active     = True,   # auto-admitted at genesis
+                    model_name    = p.model_name,
                 )
-                # Initialise reputation at zero on registration
                 self.state.reputations[tx.sender] = INITIAL_REPUTATION
                 self.state.balances[tx.sender] = (
                     self.state.balance_of(tx.sender) - tx.fee
                 )
                 self.state.nonces[tx.sender] = tx.nonce
+
+            case TxType.NODE_REGISTER_DNN:
+                p = tx.payload
+                self.state.nodes[tx.sender] = NodeInfo(
+                    node_id       = tx.sender,
+                    address       = tx.sender,
+                    node_type     = NODE_TYPE_DNN,
+                    public_key    = p.public_key,
+                    endpoint      = p.endpoint,
+                    registered_at = height,
+                    is_active     = False,   # inactive until PoM passes
+                    model_name    = p.model_name,
+                    weights_hash  = p.weights_hash,
+                    dataset_id    = p.dataset_id,
+                    architecture  = p.architecture,
+                )
+                self.state.reputations[tx.sender] = INITIAL_REPUTATION
+                # Initialise PoM tracking state
+                self.state.pom_states[tx.sender] = {
+                    "positive": [], "negative": [], "accuracies": [],
+                    "node_type": NODE_TYPE_DNN,
+                    "weights_hash": p.weights_hash,
+                }
+                self.state.balances[tx.sender] = (
+                    self.state.balance_of(tx.sender) - tx.fee
+                )
+                self.state.nonces[tx.sender] = tx.nonce
+
+            case TxType.NODE_REGISTER_POS:
+                p = tx.payload
+                self.state.nodes[tx.sender] = NodeInfo(
+                    node_id       = tx.sender,
+                    address       = tx.sender,
+                    node_type     = NODE_TYPE_POS,
+                    public_key    = p.public_key,
+                    endpoint      = p.endpoint,
+                    registered_at = height,
+                    is_active     = False,   # inactive until stake tx confirmed
+                )
+                self.state.reputations[tx.sender] = INITIAL_REPUTATION
+                self.state.balances[tx.sender] = (
+                    self.state.balance_of(tx.sender) - tx.fee
+                )
+                self.state.nonces[tx.sender] = tx.nonce
+
+            case TxType.MODEL_RESPONSE:
+                # Just record nonce — PoM logic tracked via MODEL_VERIFY txs
+                self.state.nonces[tx.sender] = tx.nonce
+                self.state.balances[tx.sender] = (
+                    self.state.balance_of(tx.sender) - tx.fee
+                )
+
+            case TxType.MODEL_VERIFY:
+                p = tx.payload
+                pom = self.state.pom_states.get(p.node_id)
+                if pom is not None:
+                    if tx.sender not in pom["positive"] and tx.sender not in pom["negative"]:
+                        if p.verified:
+                            pom["positive"].append(tx.sender)
+                        else:
+                            pom["negative"].append(tx.sender)
+                        pom["accuracies"].append(p.accuracy)
+
+            case TxType.NODE_ADMITTED:
+                p = tx.payload
+                if p.node_id in self.state.nodes:
+                    node = self.state.nodes[p.node_id]
+                    node.is_active   = True
+                    node.pom_verified = True
+                    node.pom_block   = height
+                # If PoS node — activate directly (no PoM needed)
+                # Stake check happens in validator_set()
+
+            case TxType.NODE_REJECTED:
+                p = tx.payload
+                if p.node_id in self.state.nodes:
+                    # Keep the node record but mark inactive; fee already burned
+                    self.state.nodes[p.node_id].is_active = False
+                self.state.pom_states.pop(p.node_id, None)
 
             case TxType.CONTRACT_DEPLOY:
                 from .utils import sha256_json

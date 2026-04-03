@@ -27,19 +27,26 @@ class TxFamily(str, Enum):
 
 class TxType(str, Enum):
     # ── Simple ────────────────────────────────────────────────────────────────
-    TOKEN_TRANSFER   = "token_transfer"
-    STAKE            = "stake"
-    UNSTAKE          = "unstake"
-    NODE_REGISTER    = "node_register"
-    CONTRACT_DEPLOY  = "contract_deploy"
-    CONTRACT_CALL    = "contract_call"
+    TOKEN_TRANSFER      = "token_transfer"
+    STAKE               = "stake"
+    UNSTAKE             = "unstake"
+    NODE_REGISTER       = "node_register"       # legacy / genesis only
+    NODE_REGISTER_DNN   = "node_register_dnn"   # DNN validator registration
+    NODE_REGISTER_POS   = "node_register_pos"   # PoS-only validator registration
+    MODEL_RESPONSE      = "model_response"      # node answers PoM challenge
+    CONTRACT_DEPLOY     = "contract_deploy"
+    CONTRACT_CALL       = "contract_call"
     # ── Inference ─────────────────────────────────────────────────────────────
-    INFERENCE_REQUEST  = "inference_request"
+    INFERENCE_REQUEST   = "inference_request"
     # ── System ────────────────────────────────────────────────────────────────
-    INFERENCE_RESPONSE = "inference_response"
-    CONSENSUS_RESULT   = "consensus_result"
-    REWARD             = "reward"
-    SLASH              = "slash"
+    INFERENCE_RESPONSE  = "inference_response"
+    CONSENSUS_RESULT    = "consensus_result"
+    REWARD              = "reward"
+    SLASH               = "slash"
+    MODEL_CHALLENGE     = "model_challenge"     # protocol issues PoM challenge
+    MODEL_VERIFY        = "model_verify"        # validator submits verification
+    NODE_ADMITTED       = "node_admitted"       # node passed PoM
+    NODE_REJECTED       = "node_rejected"       # node failed PoM
 
 
 _TX_FAMILY: dict[TxType, TxFamily] = {
@@ -47,6 +54,9 @@ _TX_FAMILY: dict[TxType, TxFamily] = {
     TxType.STAKE:             TxFamily.SIMPLE,
     TxType.UNSTAKE:           TxFamily.SIMPLE,
     TxType.NODE_REGISTER:     TxFamily.SIMPLE,
+    TxType.NODE_REGISTER_DNN: TxFamily.SIMPLE,
+    TxType.NODE_REGISTER_POS: TxFamily.SIMPLE,
+    TxType.MODEL_RESPONSE:    TxFamily.SIMPLE,
     TxType.CONTRACT_DEPLOY:   TxFamily.SIMPLE,
     TxType.CONTRACT_CALL:     TxFamily.SIMPLE,
     TxType.INFERENCE_REQUEST: TxFamily.INFERENCE,
@@ -54,6 +64,10 @@ _TX_FAMILY: dict[TxType, TxFamily] = {
     TxType.CONSENSUS_RESULT:  TxFamily.SYSTEM,
     TxType.REWARD:            TxFamily.SYSTEM,
     TxType.SLASH:             TxFamily.SYSTEM,
+    TxType.MODEL_CHALLENGE:   TxFamily.SYSTEM,
+    TxType.MODEL_VERIFY:      TxFamily.SYSTEM,
+    TxType.NODE_ADMITTED:     TxFamily.SYSTEM,
+    TxType.NODE_REJECTED:     TxFamily.SYSTEM,
 }
 
 
@@ -201,6 +215,115 @@ class SlashPayload:
         }
 
 
+@dataclass
+class NodeRegisterDNNPayload:
+    """DNN validator registration with model commitment."""
+    model_name:    str          # e.g. "resnet20"
+    architecture:  dict         # JSON layer spec {layers, input_size, num_classes}
+    weights_hash:  str          # SHA-256(weights_file) — on-chain commitment
+    endpoint:      str          # host:port serving /weights and /predict
+    dataset_id:    str          # "cifar10" | "imagenet_subset"
+    public_key:    str          # hex-encoded public key
+
+    def to_dict(self) -> dict:
+        return {
+            "model_name":   self.model_name,
+            "architecture": self.architecture,
+            "weights_hash": self.weights_hash,
+            "endpoint":     self.endpoint,
+            "dataset_id":   self.dataset_id,
+            "public_key":   self.public_key,
+        }
+
+
+@dataclass
+class NodeRegisterPOSPayload:
+    """PoS-only validator registration — no model required."""
+    endpoint:   str
+    public_key: str
+
+    def to_dict(self) -> dict:
+        return {
+            "endpoint":   self.endpoint,
+            "public_key": self.public_key,
+        }
+
+
+@dataclass
+class ModelChallengePayload:
+    """Protocol-issued PoM challenge (system tx)."""
+    node_id:           str
+    challenge_indices: list[int]   # 50 deterministic CIFAR-10 test indices
+    ground_truth:      list[int]   # correct labels at those indices
+    dataset_id:        str
+
+    def to_dict(self) -> dict:
+        return {
+            "node_id":           self.node_id,
+            "challenge_indices": self.challenge_indices,
+            "ground_truth":      self.ground_truth,
+            "dataset_id":        self.dataset_id,
+        }
+
+
+@dataclass
+class ModelResponsePayload:
+    """Node's answer to the PoM challenge (simple tx)."""
+    node_id:     str
+    predictions: list[int]   # argmax for each challenge sample (same order)
+
+    def to_dict(self) -> dict:
+        return {
+            "node_id":     self.node_id,
+            "predictions": self.predictions,
+        }
+
+
+@dataclass
+class ModelVerifyPayload:
+    """Validator's independent verification result (system tx)."""
+    node_id:       str
+    verified:      bool
+    accuracy:      float
+    weights_match: bool    # SHA-256(downloaded_weights) == weights_hash on-chain
+
+    def to_dict(self) -> dict:
+        return {
+            "node_id":       self.node_id,
+            "verified":      self.verified,
+            "accuracy":      self.accuracy,
+            "weights_match": self.weights_match,
+        }
+
+
+@dataclass
+class NodeAdmittedPayload:
+    """Protocol emits this when 2f+1 positive verifications received."""
+    node_id:      str
+    node_type:    str    # "dnn" | "pos"
+    final_accuracy: float
+
+    def to_dict(self) -> dict:
+        return {
+            "node_id":        self.node_id,
+            "node_type":      self.node_type,
+            "final_accuracy": self.final_accuracy,
+        }
+
+
+@dataclass
+class NodeRejectedPayload:
+    """Protocol emits this when PoM fails."""
+    node_id: str
+    reason:  str
+
+    def to_dict(self) -> dict:
+        return {
+            "node_id": self.node_id,
+            "reason":  self.reason,
+        }
+
+
 # ── Transaction ───────────────────────────────────────────────────────────────
 
 @dataclass
@@ -291,6 +414,50 @@ def _payload_from_dict(tx_type: TxType, d: dict) -> Any:
                 model_name=d["model_name"],
                 public_key=d["public_key"],
                 endpoint=d["endpoint"],
+            )
+        case TxType.NODE_REGISTER_DNN:
+            return NodeRegisterDNNPayload(
+                model_name=d["model_name"],
+                architecture=d["architecture"],
+                weights_hash=d["weights_hash"],
+                endpoint=d["endpoint"],
+                dataset_id=d["dataset_id"],
+                public_key=d["public_key"],
+            )
+        case TxType.NODE_REGISTER_POS:
+            return NodeRegisterPOSPayload(
+                endpoint=d["endpoint"],
+                public_key=d["public_key"],
+            )
+        case TxType.MODEL_CHALLENGE:
+            return ModelChallengePayload(
+                node_id=d["node_id"],
+                challenge_indices=d["challenge_indices"],
+                ground_truth=d["ground_truth"],
+                dataset_id=d["dataset_id"],
+            )
+        case TxType.MODEL_RESPONSE:
+            return ModelResponsePayload(
+                node_id=d["node_id"],
+                predictions=d["predictions"],
+            )
+        case TxType.MODEL_VERIFY:
+            return ModelVerifyPayload(
+                node_id=d["node_id"],
+                verified=d["verified"],
+                accuracy=d["accuracy"],
+                weights_match=d["weights_match"],
+            )
+        case TxType.NODE_ADMITTED:
+            return NodeAdmittedPayload(
+                node_id=d["node_id"],
+                node_type=d["node_type"],
+                final_accuracy=d["final_accuracy"],
+            )
+        case TxType.NODE_REJECTED:
+            return NodeRejectedPayload(
+                node_id=d["node_id"],
+                reason=d["reason"],
             )
         case TxType.CONTRACT_DEPLOY:
             return ContractDeployPayload(

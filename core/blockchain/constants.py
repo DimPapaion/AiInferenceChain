@@ -37,6 +37,18 @@ REP_LEADER_BONUS    = 0.1             # extra rep for primary on top of QoI-prop
 QOI_HONEST_THRESHOLD = 0.0            # cosine sim floor — all argmax-correct nodes rewarded
                                        # (set > 0 to require minimum quality)
 
+# ── Proof of Model (PoM) ──────────────────────────────────────────────────────
+POM_CHALLENGE_SIZE    = 50             # number of challenge samples issued
+MIN_MODEL_ACCURACY    = 0.80           # node must score ≥ 80% on challenge
+POM_VERIFY_TIMEOUT    = 30.0          # seconds validators have to submit MODEL_VERIFY
+MIN_STAKE_DNN         = 1_000.0       # minimum stake for DNN validator (same as MIN_STAKE)
+MIN_STAKE_POS         = 500.0         # minimum stake for PoS-only validator (lower bar)
+SUPPORTED_DATASETS    = {"cifar10"}   # expandable in future
+
+# ── Node types ────────────────────────────────────────────────────────────────
+NODE_TYPE_DNN = "dnn"
+NODE_TYPE_POS = "pos"
+
 # ── Mempool ───────────────────────────────────────────────────────────────────
 MEMPOOL_MAX_SIZE    = 10_000           # max pending transactions
 
