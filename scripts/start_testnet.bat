@@ -14,9 +14,9 @@
 ::   Node 1:     http://localhost:8001/docs
 ::   Node 2:     http://localhost:8002/docs
 ::
-:: To import a dev wallet:
-::   python wallet.py import 947f6967eba35761053563545933a3899ed077c4cdb900b90d70f1adf62ccabf --out node0.json
-::   python wallet.py info --wallet node0.json --node http://localhost:8000
+:: To import a dev wallet (use C:\Python310\python.exe, NOT python which is 2.7):
+::   C:\Python310\python.exe wallet.py import 947f6967eba35761053563545933a3899ed077c4cdb900b90d70f1adf62ccabf --out node0.json
+::   C:\Python310\python.exe wallet.py info --wallet node0.json --node http://localhost:8000
 :: ─────────────────────────────────────────────────────────────────────────────
 
 set PYTHON=C:\Python310\python.exe

@@ -1,5 +1,6 @@
+# -*- coding: utf-8 -*-
 """
-wallet.py — InferenceChain CLI wallet.
+wallet.py - InferenceChain CLI wallet.
 
 Manages a local keypair file and talks to any running node via REST.
 
