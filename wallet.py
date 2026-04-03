@@ -428,7 +428,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("seal", help="[Dev] Manually seal a block on the node")
     s.add_argument("--proposer", default=None,
                    help="Proposer node_id (default: node-<port>)")
-    s.add_argument("--node", default=DEFAULT_NODE)
+    _add_common(s)
 
     return p
 
