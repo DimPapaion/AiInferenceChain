@@ -30,6 +30,7 @@ import uvicorn
 
 from core.api import create_app
 from core.api.node_service import create_node_service
+from core.consensus.engine import ConsensusEngine
 from core.network.p2p_server import P2PServer
 from core.node.identity import NodeIdentity
 
@@ -106,6 +107,16 @@ async def run(args: argparse.Namespace) -> None:
     # Attach p2p reference to svc so HTTP routes can gossip too
     svc._p2p_server = p2p  # type: ignore[attr-defined]
 
+    # ── Consensus engine ──────────────────────────────────────────────────────
+    engine = ConsensusEngine(
+        node_service = svc,
+        node_id      = node_id,
+        node_type    = "pos",   # "dnn" when model loading is wired
+        f            = args.f,
+    )
+    engine.attach_p2p(p2p)
+    p2p.attach_consensus(engine)
+
     # ── FastAPI app ───────────────────────────────────────────────────────────
     app = create_app(
         node_service = svc,
@@ -131,6 +142,7 @@ async def run(args: argparse.Namespace) -> None:
     await asyncio.gather(
         uvicorn_server.serve(),
         p2p.start(),
+        engine.run(),
     )
 
 

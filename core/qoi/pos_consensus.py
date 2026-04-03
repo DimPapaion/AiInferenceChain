@@ -104,6 +104,7 @@ class PoSConsensusMachine:
         """
         Called by the proposer to announce a new block.
         Returns the proposer's own vote to broadcast.
+        Also finalises immediately if 2f+1 is already met (f=0 single-node).
         """
         self._proposed_block = block
         self.phase           = PoSPhase.PROPOSED
@@ -116,6 +117,11 @@ class PoSConsensusMachine:
             view       = self.view,
         )
         self._votes[self.node_id] = vote
+
+        # Single-node (f=0): proposer's vote alone meets 2f+1=1 threshold
+        if len(self._votes) >= 2 * self.f + 1:
+            self._finalise()
+
         return vote
 
     def handle_proposed_block(self, block: Block) -> Optional[VoteMsg]:

@@ -114,7 +114,7 @@ class TestPeerConnection:
     def test_send_queues_message(self):
         ws = FakeWS()
         peer = PeerConnection(ws)
-        asyncio.get_event_loop().run_until_complete(peer.send(make_ping(0.0)))
+        asyncio.run(peer.send(make_ping(0.0)))
         assert len(ws.sent) == 1
         assert ws.last_msg().type == MsgType.PING
 
@@ -150,7 +150,7 @@ class TestPeerConnection:
             closed = True
             async def send(self, _): raise ConnectionError("gone")
         peer = PeerConnection(BrokenWS())
-        result = asyncio.get_event_loop().run_until_complete(peer.send(make_ping(0.0)))
+        result = asyncio.run(peer.send(make_ping(0.0)))
         assert result is False
 
     def test_to_dict(self):
@@ -211,14 +211,14 @@ class TestP2PDispatch:
     def test_dispatch_ping_sends_pong(self):
         srv, peer, ws = self._make_server_and_peer()
         msg = make_ping(99.0)
-        asyncio.get_event_loop().run_until_complete(srv._dispatch(peer, msg))
+        asyncio.run(srv._dispatch(peer, msg))
         assert ws.last_msg().type == MsgType.PONG
         assert ws.last_msg().payload["ts"] == 99.0
 
     def test_dispatch_handshake_updates_peer(self):
         srv, peer, ws = self._make_server_and_peer()
         msg = make_handshake("peer-node", "http://1.2.3.4:8000", 9000, 0, "a" * 64)
-        asyncio.get_event_loop().run_until_complete(srv._dispatch(peer, msg))
+        asyncio.run(srv._dispatch(peer, msg))
         assert peer.node_id      == "peer-node"
         assert peer.handshake_done
 
@@ -226,7 +226,7 @@ class TestP2PDispatch:
         srv, peer, ws = self._make_server_and_peer()
         # Peer claims height=5, we are at 0 — should send GET_BLOCKS
         msg = make_handshake("peer-node", "http://1.2.3.4:8000", 9000, 5, "a" * 64)
-        asyncio.get_event_loop().run_until_complete(srv._dispatch(peer, msg))
+        asyncio.run(srv._dispatch(peer, msg))
         get_blocks = ws.last_msg()
         assert get_blocks.type == MsgType.GET_BLOCKS
         assert get_blocks.payload["from_height"] == 1
@@ -234,7 +234,7 @@ class TestP2PDispatch:
     def test_dispatch_get_blocks_serves_genesis(self):
         srv, peer, ws = self._make_server_and_peer()
         msg = make_get_blocks(0, 0)
-        asyncio.get_event_loop().run_until_complete(srv._dispatch(peer, msg))
+        asyncio.run(srv._dispatch(peer, msg))
         response = ws.last_msg()
         assert response.type == MsgType.BLOCKS
         assert len(response.payload["blocks"]) == 1
@@ -243,7 +243,7 @@ class TestP2PDispatch:
     def test_dispatch_get_blocks_out_of_range(self):
         srv, peer, ws = self._make_server_and_peer()
         msg = make_get_blocks(100, 200)
-        asyncio.get_event_loop().run_until_complete(srv._dispatch(peer, msg))
+        asyncio.run(srv._dispatch(peer, msg))
         response = ws.last_msg()
         assert response.type == MsgType.BLOCKS
         assert response.payload["blocks"] == []
@@ -275,7 +275,7 @@ class TestP2PDispatch:
         tx_dict = tx.to_dict()
 
         msg = make_tx_msg(tx_dict)
-        asyncio.get_event_loop().run_until_complete(srv._dispatch(peer, msg))
+        asyncio.run(srv._dispatch(peer, msg))
 
         # tx should be in mempool
         assert svc.mempool.has_tx(tx.tx_id)
@@ -302,8 +302,8 @@ class TestP2PDispatch:
         tx.signature = identity.sign_tx(tx.tx_id)
         msg = make_tx_msg(tx.to_dict())
 
-        asyncio.get_event_loop().run_until_complete(srv._dispatch(peer, msg))
-        asyncio.get_event_loop().run_until_complete(srv._dispatch(peer, msg))  # duplicate
+        asyncio.run(srv._dispatch(peer, msg))
+        asyncio.run(srv._dispatch(peer, msg))  # duplicate
 
         # Still only 1 in mempool
         assert svc.mempool.size == 1
@@ -311,7 +311,7 @@ class TestP2PDispatch:
     def test_dispatch_peers_adds_to_service(self):
         srv, peer, ws = self._make_server_and_peer()
         msg = make_peers_msg(["http://10.0.0.1:8000", "http://10.0.0.2:8000"])
-        asyncio.get_event_loop().run_until_complete(srv._dispatch(peer, msg))
+        asyncio.run(srv._dispatch(peer, msg))
         # Both URLs should be added to svc.peers
         assert "http://10.0.0.1:8000" in srv.svc.peers
         assert "http://10.0.0.2:8000" in srv.svc.peers

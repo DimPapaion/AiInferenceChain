@@ -77,11 +77,18 @@ class P2PServer:
         # Bootstrap peer URLs to connect to on startup
         self._bootstrap_urls: list[str] = []
 
+        # Consensus engine (set via attach_consensus)
+        self._consensus_engine = None
+
         # Background tasks
         self._tasks: list[asyncio.Task] = []
         self._server = None
 
     # ── Public interface ──────────────────────────────────────────────────────
+
+    def attach_consensus(self, engine) -> None:
+        """Wire the ConsensusEngine so incoming consensus msgs are routed to it."""
+        self._consensus_engine = engine
 
     def add_bootstrap(self, base_url: str) -> None:
         """Register a peer URL to connect to on startup."""
@@ -296,13 +303,17 @@ class P2PServer:
             log.warning("Block from %s failed: %s", peer.short_id, e)
 
     async def _on_consensus(self, peer: PeerConnection, payload: dict) -> None:
-        """
-        Route consensus messages to the active consensus round.
-        TODO: wire into QoI/PoS state machines when the consensus engine is added.
-        """
+        """Route consensus messages to the ConsensusEngine and gossip forward."""
         msg_type = payload.get("msg_type", "")
         data     = payload.get("data", {})
         log.debug("Consensus msg %s from %s", msg_type, peer.short_id)
+
+        # Route to consensus engine if running
+        if self._consensus_engine is not None:
+            asyncio.create_task(
+                self._consensus_engine.handle_consensus_msg(msg_type, data)
+            )
+
         # Gossip forward — all nodes in the consensus round need to see it
         await self._broadcast(
             make_consensus_msg(msg_type, data),
