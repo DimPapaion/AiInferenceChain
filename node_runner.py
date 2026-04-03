@@ -53,6 +53,7 @@ from core.network.discovery import PeerDiscovery
 from core.network.p2p_server import P2PServer
 from core.node.identity import NodeIdentity
 from core.node.inference_node import ModelHandle
+from core.qoi.consensus_stream import get_stream_manager
 from core.serving.image_store import ImageStore
 
 logging.basicConfig(
@@ -232,6 +233,9 @@ async def run(args: argparse.Namespace) -> None:
     # Attach p2p reference to svc so HTTP routes can gossip too
     svc._p2p_server = p2p  # type: ignore[attr-defined]
 
+    # Wire image store into P2P so nodes can serve/fetch images from peers
+    p2p.attach_image_store(image_store)
+
     # ── DNN model loading (DNN nodes only) ───────────────────────────────────
     model_handle: ModelHandle | None = None
     node_type = args.node_type
@@ -272,6 +276,9 @@ async def run(args: argparse.Namespace) -> None:
     engine.attach_p2p(p2p)
     engine.attach_image_store(image_store)
     p2p.attach_consensus(engine)
+
+    # ── Wire WebSocket stream to consensus events ─────────────────────────────
+    get_stream_manager().wire_to_event_bus()
 
     # ── FastAPI app ───────────────────────────────────────────────────────────
     app = create_app(

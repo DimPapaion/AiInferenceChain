@@ -21,19 +21,22 @@ from typing import Any
 
 class MsgType(str, Enum):
     # ── Handshake ─────────────────────────────────────────────────────────────
-    HANDSHAKE  = "HANDSHAKE"   # on connect: exchange chain state + identity
+    HANDSHAKE      = "HANDSHAKE"      # on connect: exchange chain state + identity
     # ── Keepalive ─────────────────────────────────────────────────────────────
-    PING       = "PING"
-    PONG       = "PONG"
+    PING           = "PING"
+    PONG           = "PONG"
     # ── Gossip ────────────────────────────────────────────────────────────────
-    TX         = "TX"          # broadcast a single pending transaction
-    BLOCK      = "BLOCK"       # broadcast a newly committed block
-    CONSENSUS  = "CONSENSUS"   # relay a consensus message (Vote/Prepare/Commit)
+    TX             = "TX"             # broadcast a single pending transaction
+    BLOCK          = "BLOCK"          # broadcast a newly committed block
+    CONSENSUS      = "CONSENSUS"      # relay a consensus message (Vote/Prepare/Commit)
     # ── Sync ──────────────────────────────────────────────────────────────────
-    GET_BLOCKS = "GET_BLOCKS"  # request a range of blocks
-    BLOCKS     = "BLOCKS"      # response: list of serialised blocks
+    GET_BLOCKS     = "GET_BLOCKS"     # request a range of blocks
+    BLOCKS         = "BLOCKS"         # response: list of serialised blocks
     # ── Peer exchange ─────────────────────────────────────────────────────────
-    PEERS      = "PEERS"       # share known peer base-URLs
+    PEERS          = "PEERS"          # share known peer base-URLs
+    # ── Decentralised image store ─────────────────────────────────────────────
+    IMAGE_REQUEST  = "IMAGE_REQUEST"  # "does anyone have image <hash>?"
+    IMAGE_RESPONSE = "IMAGE_RESPONSE" # "here are the bytes for <hash>"
 
 
 @dataclass
@@ -111,3 +114,17 @@ def make_blocks_response(blocks: list[dict]) -> P2PMessage:
 
 def make_peers_msg(peers: list[str]) -> P2PMessage:
     return P2PMessage(type=MsgType.PEERS, payload={"peers": peers})
+
+
+def make_image_request(image_hash: str) -> P2PMessage:
+    return P2PMessage(
+        type    = MsgType.IMAGE_REQUEST,
+        payload = {"image_hash": image_hash},
+    )
+
+
+def make_image_response(image_hash: str, data_hex: str) -> P2PMessage:
+    return P2PMessage(
+        type    = MsgType.IMAGE_RESPONSE,
+        payload = {"image_hash": image_hash, "data_hex": data_hex},
+    )

@@ -61,6 +61,7 @@ from core.qoi.messages import (
     PrepareMsg, CommitMsg, ViewChangeMsg, NewViewMsg,
     message_from_dict,
 )
+from core.events import EventType, get_global_bus
 from core.qoi.pos_consensus import PoSConsensusMachine, PoSOutcome, VoteMsg
 from core.qoi.proposer import select_proposer
 from core.qoi.state_machine import QoIStateMachine, QoIPhase, ConsensusOutcome
@@ -271,6 +272,15 @@ class ConsensusEngine:
                 "PoS block committed height=%d txs=%d hash=%s…",
                 block.height, block.tx_count, block.hash[:12],
             )
+            get_global_bus().publish(
+                EventType.POS_COMMITTED,
+                data={
+                    "height":   block.height,
+                    "proposer": outcome.proposer_id,
+                    "tx_count": block.tx_count,
+                    "hash":     block.hash,
+                },
+            )
             # Gossip to peers
             if self._p2p:
                 await self._p2p.broadcast_block(block.to_dict())
@@ -357,25 +367,50 @@ class ConsensusEngine:
     async def _run_inference(self, image_hash: str) -> list[float]:
         """
         Run the DNN model on the image identified by image_hash.
-        Retrieves the image tensor from the content-addressed ImageStore,
-        then runs self.model(tensor) to get the probability vector.
-        Falls back to a uniform distribution if the image is missing or
-        the model is unavailable.
+
+        Fetch order:
+          1. Check local ImageStore.
+          2. If missing, broadcast IMAGE_REQUEST over P2P and wait up to 8s
+             for any peer to respond with the bytes.
+          3. If still missing, fall back to a uniform distribution
+             (round will likely be Byzantine-detected by other nodes).
         """
         image_store = getattr(self, "_image_store", None)
-        if self.model is not None and image_store is not None:
+        if self.model is None:
+            return [0.1] * 10
+
+        # ── Step 1: local store ───────────────────────────────────────────────
+        tensor = None
+        if image_store is not None:
             try:
                 tensor = await asyncio.get_event_loop().run_in_executor(
                     None, image_store.get_tensor, image_hash
                 )
-                if tensor is not None:
-                    probs = self.model.predict(tensor)
-                    return list(probs)
-                else:
-                    log.warning("Image %s not in local store — using uniform probs", image_hash[:12])
+            except Exception as e:
+                log.warning("Local image load failed %s: %s", image_hash[:12], e)
+
+        # ── Step 2: P2P fetch if not local ────────────────────────────────────
+        if tensor is None and self._p2p is not None:
+            log.info("Image %s… not local — fetching from peers", image_hash[:12])
+            raw = await self._p2p.fetch_image(image_hash)
+            if raw is not None and image_store is not None:
+                # fetch_image already stored it; reload as tensor
+                try:
+                    tensor = await asyncio.get_event_loop().run_in_executor(
+                        None, image_store.get_tensor, image_hash
+                    )
+                except Exception as e:
+                    log.warning("Tensor load after fetch failed %s: %s", image_hash[:12], e)
+
+        # ── Step 3: run inference or fall back ────────────────────────────────
+        if tensor is not None:
+            try:
+                probs, _ = self.model.predict(tensor)
+                return list(probs)
             except Exception as e:
                 log.warning("Inference failed for %s: %s", image_hash[:12], e)
-        # Uniform fallback (10 CIFAR-10 classes)
+
+        log.warning("Image %s unavailable — using uniform probs (node may be penalised)", image_hash[:12])
         return [0.1] * 10
 
     async def _wait_for_qoi_commit(self) -> bool:

@@ -34,6 +34,7 @@ from core.network.messages import (
     make_tx_msg, make_block_msg,
     make_get_blocks, make_blocks_response,
     make_peers_msg, make_consensus_msg,
+    make_image_request, make_image_response,
 )
 from core.network.peer import PeerConnection
 
@@ -83,6 +84,13 @@ class P2PServer:
         # Consensus engine (set via attach_consensus)
         self._consensus_engine = None
 
+        # Content-addressed image store (set via attach_image_store)
+        self._image_store = None
+
+        # Pending image fetches: image_hash → asyncio.Event
+        # Set when we are waiting for an IMAGE_RESPONSE from any peer.
+        self._pending_image_fetches: dict[str, asyncio.Event] = {}
+
         # Background tasks
         self._tasks: list[asyncio.Task] = []
         self._server = None
@@ -100,6 +108,10 @@ class P2PServer:
     def attach_consensus(self, engine) -> None:
         """Wire the ConsensusEngine so incoming consensus msgs are routed to it."""
         self._consensus_engine = engine
+
+    def attach_image_store(self, image_store) -> None:
+        """Wire the ImageStore so this node can serve and cache inference images."""
+        self._image_store = image_store
 
     def add_bootstrap(self, base_url: str) -> None:
         """Register a peer URL to connect to on startup."""
@@ -256,6 +268,10 @@ class P2PServer:
                 await self._on_blocks(peer, msg.payload)
             case MsgType.PEERS:
                 await self._on_peers(peer, msg.payload)
+            case MsgType.IMAGE_REQUEST:
+                await self._on_image_request(peer, msg.payload)
+            case MsgType.IMAGE_RESPONSE:
+                await self._on_image_response(peer, msg.payload)
             case _:
                 log.debug("Unknown message type %s from %s", msg.type, peer.short_id)
 
@@ -396,6 +412,102 @@ class P2PServer:
                 if self._discovery:
                     self._discovery.add(url)
                 asyncio.create_task(self._connect_outbound(url))
+
+    async def _on_image_request(self, peer: PeerConnection, payload: dict) -> None:
+        """
+        A peer is asking for an image by its SHA-256 hash.
+        If we have it locally, send IMAGE_RESPONSE directly back to that peer.
+        """
+        image_hash = payload.get("image_hash", "")
+        if not image_hash:
+            return
+        if self._image_store is None or not self._image_store.has(image_hash):
+            return   # we don't have it — stay silent
+        data = self._image_store.get(image_hash)
+        if data is None:
+            return
+        log.debug(
+            "Serving image %s… (%d bytes) to %s",
+            image_hash[:12], len(data), peer.short_id,
+        )
+        await peer.send(make_image_response(image_hash, data.hex()))
+
+    async def _on_image_response(self, peer: PeerConnection, payload: dict) -> None:
+        """
+        A peer sent us image bytes in response to our IMAGE_REQUEST.
+        Verify integrity, store locally, then signal any waiting fetch.
+        """
+        import hashlib
+        image_hash = payload.get("image_hash", "")
+        data_hex   = payload.get("data_hex", "")
+        if not image_hash or not data_hex:
+            return
+
+        try:
+            data = bytes.fromhex(data_hex)
+        except ValueError:
+            log.warning("IMAGE_RESPONSE from %s had invalid hex", peer.short_id)
+            return
+
+        # Verify content-addressed integrity before storing
+        actual = hashlib.sha256(data).hexdigest()
+        if actual != image_hash:
+            log.warning(
+                "IMAGE_RESPONSE integrity failure from %s: expected %s… got %s…",
+                peer.short_id, image_hash[:12], actual[:12],
+            )
+            return
+
+        # Store locally
+        if self._image_store is not None:
+            self._image_store.put(data)
+
+        # Wake up any fetch() call waiting on this hash
+        evt = self._pending_image_fetches.get(image_hash)
+        if evt:
+            evt.set()
+
+    # ── Decentralised image fetch ─────────────────────────────────────────────
+
+    async def fetch_image(self, image_hash: str, timeout: float = 8.0) -> bytes | None:
+        """
+        Return the raw bytes for an image, fetching from peers if not local.
+
+        Algorithm:
+          1. Check local ImageStore — return immediately if present.
+          2. Broadcast IMAGE_REQUEST to all peers.
+          3. Wait up to `timeout` seconds for any peer to send IMAGE_RESPONSE.
+          4. On response the handler stores the bytes locally and sets the event.
+          5. Return the bytes (or None on timeout / no peers).
+
+        The hash is the authoritative address — bytes are verified on arrival.
+        """
+        if self._image_store is not None and self._image_store.has(image_hash):
+            return self._image_store.get(image_hash)
+
+        if not self._peers:
+            log.debug("No peers — cannot fetch image %s…", image_hash[:12])
+            return None
+
+        # Register pending fetch before broadcasting to avoid a race where
+        # the response arrives before we start waiting.
+        evt = asyncio.Event()
+        self._pending_image_fetches[image_hash] = evt
+
+        log.debug("Broadcasting IMAGE_REQUEST for %s…", image_hash[:12])
+        await self._broadcast(make_image_request(image_hash))
+
+        try:
+            await asyncio.wait_for(evt.wait(), timeout=timeout)
+            data = self._image_store.get(image_hash) if self._image_store else None
+            if data:
+                log.info("Image %s… fetched from peer (%d bytes)", image_hash[:12], len(data))
+            return data
+        except asyncio.TimeoutError:
+            log.warning("Image fetch timeout for %s…", image_hash[:12])
+            return None
+        finally:
+            self._pending_image_fetches.pop(image_hash, None)
 
     # ── Broadcast helpers ─────────────────────────────────────────────────────
 

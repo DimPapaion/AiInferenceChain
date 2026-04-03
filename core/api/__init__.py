@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from core.api.node_service import NodeService
-from core.api.routes import chain, state, tx, inference, p2p, dev
+from core.api.routes import chain, state, tx, inference, p2p, dev, dashboard, websocket
 
 
 def create_app(
@@ -67,6 +67,8 @@ def create_app(
     app.include_router(tx.router)
     app.include_router(inference.router)
     app.include_router(p2p.router)
+    app.include_router(dashboard.router)
+    app.include_router(websocket.router)
     if dev_mode:
         app.include_router(dev.router)
 
