@@ -151,9 +151,14 @@ class NodeService:
                 self.chain.append(block)
                 self.mempool.remove([tx.tx_id for tx in simple_txs])
                 self._persist_block(block)
-                return block
             except ValueError:
                 return None
+
+        # Broadcast outside the lock so peers can call ingest_block concurrently
+        p2p = getattr(self, "_p2p_server", None)
+        if p2p is not None:
+            await p2p.broadcast_block(block.to_dict())
+        return block
 
     # ── P2P block ingestion ────────────────────────────────────────────────────
 

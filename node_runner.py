@@ -171,10 +171,13 @@ async def run(args: argparse.Namespace) -> None:
     log.info("Peer discovery       : %d known peers", len(discovery))
 
     # ── Identifiers ───────────────────────────────────────────────────────────
-    rest_port = args.port
-    p2p_port  = args.p2p_port if args.p2p_port else rest_port + 1000
-    endpoint  = f"http://{args.host}:{rest_port}"
-    node_id   = args.node_id or f"node-{rest_port}"
+    rest_port      = args.port
+    p2p_port       = args.p2p_port if args.p2p_port else rest_port + 1000
+    # Announce 127.0.0.1 when binding to 0.0.0.0 so peers on the same
+    # machine can actually reach us. Override with --node-id / explicit host.
+    announced_host = "127.0.0.1" if args.host == "0.0.0.0" else args.host
+    endpoint       = f"http://{announced_host}:{rest_port}"
+    node_id        = args.node_id or f"node-{rest_port}"
 
     # ── P2P server ────────────────────────────────────────────────────────────
     p2p = P2PServer(
