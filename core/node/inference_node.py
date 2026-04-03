@@ -34,6 +34,10 @@ from core.qoi.messages import (
 )
 from core.qoi.state_machine import QoIStateMachine, QoIPhase, ConsensusOutcome
 from core.qoi.pos_consensus import PoSConsensusMachine, PoSPhase, VoteMsg
+from core.qoi.message_handler import QoIMessageHandler, QoIMessageHandlerConfig
+from core.qoi.consensus_log import ConsensusLog
+from core.events import EventBus, EventType, ConsensusEvent, get_global_bus
+from core.utils.logger import get_logger
 from .identity import NodeIdentity
 
 
@@ -138,6 +142,8 @@ class InferenceNode:
         model:       ModelHandle,
         endpoint:    str,
         f:           int = 1,
+        event_bus:   Optional[EventBus] = None,
+        db_path:     Optional[str] = None,
     ) -> None:
         self.identity    = identity
         self.model       = model
@@ -145,12 +151,35 @@ class InferenceNode:
         self.f           = f
         self.status      = NodeStatus.UNREGISTERED
 
-        # Consensus state machines (set when round starts)
+        # Event-driven architecture (Phase 1)
+        self.event_bus = event_bus or get_global_bus()
+        self.logger = get_logger(f"node_{self.node_id[:8]}")
+
+        # Persistence layer (Phase 2)
+        self.db_path = db_path or f"node_{self.node_id[:8]}.db"
+        self.consensus_log = ConsensusLog(self.db_path)
+        
+        # Wire event bus to persistence log
+        self._setup_persistence()
+
+        # Event-driven state machine wrapper (Phase 1)
+        qoi_config = QoIMessageHandlerConfig(
+            node_id=self.node_id,
+            primary_id=None,  # Will be set per round
+            f=self.f,
+        )
+        self._qoi_handler: Optional[QoIMessageHandler] = None
+        self._qoi_config = qoi_config
+
+        # Legacy state machines (for backward compatibility)
         self._qoi_sm:    Optional[QoIStateMachine]   = None
         self._pos_sm:    Optional[PoSConsensusMachine] = None
 
         # Nonce tracker (synced with chain state)
         self._nonce:     int = 0
+        
+        # Track QoI outcomes from events
+        self._last_qoi_outcome: Optional[ConsensusOutcome] = None
 
     # ── Identity shortcuts ────────────────────────────────────────────────────
 
@@ -161,6 +190,41 @@ class InferenceNode:
     @property
     def node_id(self) -> str:
         return self.identity.address
+
+    # ── Persistence setup ──────────────────────────────────────────────────────
+
+    def _setup_persistence(self) -> None:
+        """Wire event bus events to persistence log."""
+        # Subscribe to all QoI events for logging
+        for event_type in [
+            EventType.QOI_PRE_PREPARE,
+            EventType.QOI_PREPARE,
+            EventType.QOI_COMMIT,
+            EventType.QOI_COMMITTED,
+        ]:
+            self.event_bus.subscribe(
+                event_type,
+                lambda e, et=event_type: self._log_event(e),
+                filter_fn=lambda e: e.data.get("node_id") == self.node_id,
+            )
+
+    def _log_event(self, event: ConsensusEvent) -> None:
+        """Log consensus event to persistence layer."""
+        try:
+            self.consensus_log.record_event(event)
+            request_id = event.data.get("request_id", "unknown")
+            phase = event.data.get("phase", "unknown")
+            self.logger.debug(
+                "Event persisted",
+                trace_id=event.trace_id,
+                context={"request_id": request_id, "phase": phase},
+            )
+        except Exception as e:
+            self.logger.error(
+                "Failed to persist event",
+                trace_id=event.trace_id,
+                context={"error": str(e)},
+            )
 
     # ── Registration ──────────────────────────────────────────────────────────
 
@@ -241,20 +305,83 @@ class InferenceNode:
     ) -> Optional[PrePrepareMsg]:
         """
         Start a QoI round. If this node is primary, returns a PRE_PREPARE to broadcast.
+        
+        Uses event-driven QoIMessageHandler for new architecture (Phase 1+2).
+        Falls back to legacy QoIStateMachine if handler creation fails.
         """
-        probs, _ = self.model.predict(image_tensor)
-        self._qoi_sm = QoIStateMachine(
-            node_id    = self.node_id,
-            primary_id = primary_id,
-            f          = self.f,
-        )
-        msg = self._qoi_sm.start_round(request_id, image_hash, seq, probs)
-        if msg:
-            msg.signature = self.identity.sign(msg.to_dict())
-        return msg
+        try:
+            probs, _ = self.model.predict(image_tensor)
+            
+            # Set up event-driven handler for this round
+            self._qoi_config.primary_id = primary_id
+            self._qoi_handler = QoIMessageHandler(
+                config=self._qoi_config,
+                node=self,
+                event_bus=self.event_bus,
+            )
+            
+            # Start round via handler (auto-signed, auto-emitted, auto-logged)
+            msg = self._qoi_handler.start_round(
+                request_id=request_id,
+                image_hash=image_hash,
+                seq=seq,
+                own_probs=probs,
+            )
+            
+            self.logger.info(
+                "QoI round started",
+                trace_id=request_id,
+                context={
+                    "seq": seq,
+                    "is_primary": self.node_id == primary_id,
+                },
+            )
+            
+            return msg
+            
+        except Exception as e:
+            self.logger.error(
+                "Failed to start QoI round with handler",
+                trace_id=request_id,
+                context={"error": str(e)},
+            )
+            # Fallback to legacy approach
+            probs, _ = self.model.predict(image_tensor)
+            self._qoi_sm = QoIStateMachine(
+                node_id    = self.node_id,
+                primary_id = primary_id,
+                f          = self.f,
+            )
+            msg = self._qoi_sm.start_round(request_id, image_hash, seq, probs)
+            if msg:
+                msg.signature = self.identity.sign(msg.to_dict())
+            return msg
 
     def handle_qoi_message(self, msg: BaseMessage) -> Optional[BaseMessage]:
-        """Feed an incoming QoI protocol message into the state machine."""
+        """
+        Feed an incoming QoI protocol message into the state machine.
+        
+        Uses event-driven QoIMessageHandler when available (Phase 1+2).
+        Falls back to legacy QoIStateMachine for backward compatibility.
+        """
+        try:
+            # Prefer event-driven handler if it exists for this round
+            if self._qoi_handler:
+                response = self._qoi_handler.on_message_received(msg)
+                self.logger.debug(
+                    "Message handled by QoIHandler",
+                    trace_id=getattr(msg, "trace_id", "unknown"),
+                    context={"msg_type": msg.msg_type.name if hasattr(msg, "msg_type") else "unknown"},
+                )
+                return response
+        except Exception as e:
+            self.logger.warn(
+                "QoIHandler message handling failed",
+                trace_id=getattr(msg, "trace_id", "unknown"),
+                context={"error": str(e)},
+            )
+        
+        # Fallback to legacy state machine
         if self._qoi_sm is None:
             return None
         response = self._qoi_sm.handle_message(msg)
@@ -274,10 +401,16 @@ class InferenceNode:
 
     @property
     def qoi_outcome(self) -> Optional[ConsensusOutcome]:
+        """Get QoI consensus outcome from handler or legacy state machine."""
+        if self._qoi_handler:
+            return self._qoi_handler.state_machine.outcome
         return self._qoi_sm.outcome if self._qoi_sm else None
 
     @property
     def qoi_phase(self) -> Optional[QoIPhase]:
+        """Get current QoI phase from handler or legacy state machine."""
+        if self._qoi_handler:
+            return self._qoi_handler.state_machine.phase
         return self._qoi_sm.phase if self._qoi_sm else None
 
     # ── PoS consensus ─────────────────────────────────────────────────────────

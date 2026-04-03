@@ -370,6 +370,8 @@ class QoIStateMachine:
         return None
 
     def _handle_view_change(self, msg: ViewChangeMsg) -> Optional[NewViewMsg]:
+        if msg.new_view <= self.view:
+            return None   # stale view change — ignore
         self._view_changes[msg.sender_id] = msg
         self.phase = QoIPhase.VIEW_CHANGE
 

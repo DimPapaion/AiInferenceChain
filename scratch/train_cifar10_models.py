@@ -30,13 +30,16 @@ from models.architectures import (
 )
 
 # ── Config ────────────────────────────────────────────────────────────────────
-WEIGHTS_DIR = os.path.join(os.path.dirname(__file__), "..", "models", "weights")
-DATA_DIR    = os.path.join(os.path.dirname(__file__), "..", "data")
-EPOCHS      = 100
-BATCH_SIZE  = 128
-LR          = 0.1
-MOMENTUM    = 0.9
+WEIGHTS_DIR  = os.path.join(os.path.dirname(__file__), "..", "models", "weights")
+DATA_DIR     = os.path.join(os.path.dirname(__file__), "..", "data")
+EPOCHS       = 100
+BATCH_SIZE   = 128
+LR           = 0.1
+MOMENTUM     = 0.9
 WEIGHT_DECAY = 5e-4
+# num_workers=0 avoids Windows multiprocessing issues (worker processes
+# re-import the module at top level, causing infinite CIFAR-10 download loops)
+NUM_WORKERS  = 0
 
 MODELS = {
     "resnet20":         resnet20,
@@ -49,25 +52,6 @@ MODELS = {
     "pyramidnet110_48": pyramidnet110_48,
 }
 
-# ── Data ──────────────────────────────────────────────────────────────────────
-train_transform = transforms.Compose([
-    transforms.RandomCrop(32, padding=4),
-    transforms.RandomHorizontalFlip(),
-    transforms.ToTensor(),
-    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-])
-
-test_transform = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-])
-
-train_set = torchvision.datasets.CIFAR10(DATA_DIR, train=True,  download=True, transform=train_transform)
-test_set  = torchvision.datasets.CIFAR10(DATA_DIR, train=False, download=True, transform=test_transform)
-
-train_loader = DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True,  num_workers=2, pin_memory=True)
-test_loader  = DataLoader(test_set,  batch_size=BATCH_SIZE, shuffle=False, num_workers=2, pin_memory=True)
-
 # ── Device ────────────────────────────────────────────────────────────────────
 try:
     import torch_directml
@@ -77,10 +61,28 @@ except ImportError:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-os.makedirs(WEIGHTS_DIR, exist_ok=True)
+
+# ── Data (created inside main guard — safe for Windows multiprocessing) ───────
+def _make_loaders():
+    train_transform = transforms.Compose([
+        transforms.RandomCrop(32, padding=4),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+    ])
+    test_transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+    ])
+    train_set = torchvision.datasets.CIFAR10(DATA_DIR, train=True,  download=True, transform=train_transform)
+    test_set  = torchvision.datasets.CIFAR10(DATA_DIR, train=False, download=True, transform=test_transform)
+    train_loader = DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True,  num_workers=NUM_WORKERS, pin_memory=True)
+    test_loader  = DataLoader(test_set,  batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS, pin_memory=True)
+    return train_loader, test_loader
+
 
 # ── Training ──────────────────────────────────────────────────────────────────
-def train_one_epoch(model, optimizer, criterion):
+def train_one_epoch(model, optimizer, criterion, train_loader):
     model.train()
     total_loss, correct, total = 0.0, 0, 0
     for inputs, labels in train_loader:
@@ -97,7 +99,7 @@ def train_one_epoch(model, optimizer, criterion):
 
 
 @torch.no_grad()
-def evaluate(model):
+def evaluate(model, test_loader):
     model.eval()
     correct, total = 0, 0
     for inputs, labels in test_loader:
@@ -107,7 +109,7 @@ def evaluate(model):
     return 100.0 * correct / total
 
 
-def train_model(name, model_fn):
+def train_model(name, model_fn, train_loader, test_loader):
     weights_path = os.path.join(WEIGHTS_DIR, f"{name}.pth")
     if os.path.exists(weights_path):
         print(f"[{name}] weights already exist, skipping.")
@@ -129,11 +131,11 @@ def train_model(name, model_fn):
     t0 = time.time()
 
     for epoch in range(1, EPOCHS + 1):
-        train_loss, train_acc = train_one_epoch(model, optimizer, criterion)
+        train_loss, train_acc = train_one_epoch(model, optimizer, criterion, train_loader)
         scheduler.step()
 
         if epoch % 10 == 0 or epoch == EPOCHS:
-            test_acc = evaluate(model)
+            test_acc = evaluate(model, test_loader)
             elapsed = time.time() - t0
             print(f"  Epoch {epoch:3d}/{EPOCHS} | loss {train_loss:.4f} | train {train_acc:.1f}% | test {test_acc:.1f}% | {elapsed:.0f}s")
 
@@ -151,13 +153,16 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str, default="all", help="Model name or 'all'")
     args = parser.parse_args()
 
+    os.makedirs(WEIGHTS_DIR, exist_ok=True)
+    train_loader, test_loader = _make_loaders()
+
     if args.model == "all":
         for name, fn in MODELS.items():
-            train_model(name, fn)
+            train_model(name, fn, train_loader, test_loader)
     else:
         if args.model not in MODELS:
             print(f"Unknown model '{args.model}'. Choose from: {list(MODELS.keys())}")
             sys.exit(1)
-        train_model(args.model, MODELS[args.model])
+        train_model(args.model, MODELS[args.model], train_loader, test_loader)
 
     print("\nAll done.")

@@ -149,6 +149,9 @@ class P2PServer:
         if self._already_seen(key):
             return
         self._mark_seen(key)
+        live = sum(1 for p in self._peers.values() if p.is_alive)
+        log.info("Broadcasting block %s… to %d live peers (%d total)",
+                 key[:8], live, len(self._peers))
         await self._broadcast(make_block_msg(block_dict))
 
     async def broadcast_consensus(self, msg_type: str, data: dict) -> None:
@@ -291,7 +294,9 @@ class P2PServer:
 
     async def _on_block(self, peer: PeerConnection, block_dict: dict) -> None:
         block_hash = block_dict.get("header", {}).get("block_hash", "")
+        log.info("Received BLOCK %s… from %s", block_hash[:8], peer.short_id)
         if self._already_seen(block_hash):
+            log.info("Block %s… already seen — skip", block_hash[:8])
             return
         self._mark_seen(block_hash)
 
