@@ -33,6 +33,9 @@ datasets/
 *.json
 !config/*.json
 !vercel.json
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/public/manifest.json
 
 # Logs
 logs/
