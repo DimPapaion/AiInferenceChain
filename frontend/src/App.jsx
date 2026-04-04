@@ -6,9 +6,10 @@ import ExplorerPage from './pages/ExplorerPage';
 import ValidatorsPage from './pages/ValidatorsPage';
 import InferencePage  from './pages/InferencePage';
 import NetworkPage    from './pages/NetworkPage';
-import JoinPage       from './pages/JoinPage';
+import JoinPage        from './pages/JoinPage';
+import WhitepaperPage  from './pages/WhitepaperPage';
 
-const PAGES = ['home','explorer','validators','inference','network','join'];
+const PAGES = ['home','explorer','validators','inference','network','join','whitepaper'];
 
 // Read hash from window location (e.g. #explorer → 'explorer')
 function getPage() {
@@ -40,7 +41,8 @@ export default function App() {
         {page === 'validators' && <ValidatorsPage />}
         {page === 'inference'  && <InferencePage />}
         {page === 'network'    && <NetworkPage />}
-        {page === 'join'       && <JoinPage     navigate={navigate} />}
+        {page === 'join'       && <JoinPage        navigate={navigate} />}
+        {page === 'whitepaper' && <WhitepaperPage navigate={navigate} />}
       </main>
     </div>
   );
