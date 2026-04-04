@@ -266,3 +266,45 @@
     text-align: center;
   }
 }
+
+/* ── Wallet button (desktop navbar) ─────────────────────────────────────────── */
+.nav-wallet-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(124,58,237,0.08);
+  color: var(--purple-light);
+  border: 1px solid rgba(124,58,237,0.25);
+  border-radius: 40px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.nav-wallet-btn:hover { background: rgba(124,58,237,0.16); }
+.nav-wallet-btn.connected {
+  border-color: rgba(124,58,237,0.5);
+  background: rgba(124,58,237,0.12);
+}
+.wallet-btn-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+.wallet-btn-label {
+  font-family: var(--mono);
+}
+
+/* ── Wallet link in mobile overlay footer ────────────────────────────────────── */
+.mobile-wallet-link {
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--purple-light);
+  font-size: 14px;
+  padding: 10px 0;
+}
+.mobile-wallet-link:hover { color: var(--text-1); }

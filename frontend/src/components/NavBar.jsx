@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import './NavBar.css';
 import { chain as chainApi } from '../api/client';
+import WalletPanel from './WalletPanel';
+import { loadWallet, shortAddr } from '../utils/wallet';
 
 const NAV = [
   { id: 'home', label: 'Home' },
@@ -13,9 +15,17 @@ const NAV = [
 ];
 
 export default function NavBar({ current, navigate }) {
-  const [height, setHeight] = useState(null);
-  const [open, setOpen] = useState(false);
+  const [height,       setHeight]       = useState(null);
+  const [open,         setOpen]         = useState(false);
+  const [walletOpen,   setWalletOpen]   = useState(false);
+  const [walletAddr,   setWalletAddr]   = useState(() => loadWallet()?.address ?? null);
   const year = new Date().getFullYear();
+
+  // Refresh wallet address label whenever panel closes (user may have imported/generated)
+  const handleWalletClose = () => {
+    setWalletOpen(false);
+    setWalletAddr(loadWallet()?.address ?? null);
+  };
 
   useEffect(() => {
     const fetch = () =>
@@ -77,6 +87,17 @@ export default function NavBar({ current, navigate }) {
               API Docs ↗
             </a>
 
+            <button
+              className={`btn nav-wallet-btn ${walletAddr ? 'connected' : ''}`}
+              onClick={() => setWalletOpen(true)}
+              title="Open wallet"
+            >
+              <span className="wallet-btn-icon">⬡</span>
+              <span className="wallet-btn-label">
+                {walletAddr ? shortAddr(walletAddr) : 'Wallet'}
+              </span>
+            </button>
+
             <button className="hamburger" onClick={() => setOpen(true)} aria-label="Open menu">
               <span /><span /><span />
             </button>
@@ -118,10 +139,18 @@ export default function NavBar({ current, navigate }) {
             <a className="mobile-footer-link" href="http://localhost:8000/docs" target="_blank" rel="noreferrer">
               ↗ API Docs
             </a>
+            <button
+              className="mobile-footer-link mobile-wallet-link"
+              onClick={() => { setOpen(false); setWalletOpen(true); }}
+            >
+              ⬡ {walletAddr ? shortAddr(walletAddr) : 'Wallet'}
+            </button>
             <div className="mobile-brand-mark">© {year} InferenceChain</div>
           </div>
         </div>
       )}
+
+      <WalletPanel open={walletOpen} onClose={handleWalletClose} />
     </>
   );
 }

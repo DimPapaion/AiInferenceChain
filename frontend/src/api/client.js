@@ -105,6 +105,15 @@ export async function uploadModel(formData) {
   return res.json();
 }
 
+// ── Wallet / state extras ─────────────────────────────────────────────────────
+export const wallet = {
+  history: (address, limit = 50) => request(`/state/history/${address}?limit=${limit}`),
+  faucet:  (address)             => request('/state/faucet', {
+    method: 'POST',
+    body: JSON.stringify({ address }),
+  }),
+};
+
 // ── WebSocket URLs ────────────────────────────────────────────────────────────
 export const ws = {
   consensus: `${WS_BASE}/ws/consensus-rounds`,
