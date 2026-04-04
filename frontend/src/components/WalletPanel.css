@@ -467,3 +467,205 @@
 .wp-error  { font-size: 12px; color: #f87171; }
 .wp-loading { font-size: 12px; color: var(--text-3); padding: 10px 0; }
 .wp-empty   { font-size: 13px; color: var(--text-3); padding: 20px 0; text-align: center; }
+
+/* ── New state screens ───────────────────────────────────────────────────────── */
+.wp-body.wp-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+}
+
+.wp-hero-icon {
+  font-size: 52px;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 4px;
+}
+.wp-lock-icon {
+  font-size: 48px;
+  margin-bottom: 8px;
+}
+.wp-locked-addr {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-3);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 12px;
+  margin-bottom: 8px;
+}
+
+.wp-section-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-1);
+  margin: 0;
+}
+.wp-muted {
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.6;
+  margin: 0;
+  max-width: 300px;
+}
+.wp-muted-sm {
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1.5;
+  margin: 0;
+}
+.wp-or-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  color: var(--text-3);
+  font-size: 11px;
+}
+.wp-or-divider::before,
+.wp-or-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.wp-ghost-sm {
+  font-size: 12px !important;
+  padding: 6px 16px !important;
+}
+
+/* ── Mnemonic grid ───────────────────────────────────────────────────────────── */
+.wp-alert-box {
+  background: rgba(245,158,11,0.08);
+  border: 1px solid rgba(245,158,11,0.3);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.6;
+  margin-bottom: 4px;
+}
+.wp-alert-box strong { color: #fbbf24; }
+.wp-alert-icon { margin-right: 6px; color: #fbbf24; }
+
+.wp-mnemonic-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 8px 0;
+}
+.wp-word-cell {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.wp-word-num {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-3);
+  min-width: 14px;
+  text-align: right;
+}
+.wp-word {
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--mono);
+  color: var(--purple-light);
+}
+.wp-mnemonic-copy {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.wp-confirm-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-2);
+  cursor: pointer;
+  line-height: 1.5;
+  width: 100%;
+  text-align: left;
+}
+.wp-confirm-check input { margin-top: 2px; flex-shrink: 0; accent-color: var(--purple); }
+
+/* ── Password strength ───────────────────────────────────────────────────────── */
+.wp-pass-wrap { display: flex; flex-direction: column; gap: 6px; }
+.wp-pass-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding-right: 8px;
+  transition: border-color var(--transition);
+}
+.wp-pass-row:focus-within { border-color: rgba(124,58,237,0.5); }
+.wp-pass-row .wp-input {
+  border: none;
+  background: none;
+  flex: 1;
+  padding: 9px 12px;
+}
+.wp-pass-row .wp-input:focus { outline: none; }
+.wp-strength {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wp-strength-bar {
+  display: flex;
+  gap: 3px;
+  flex: 1;
+}
+.wp-strength-seg {
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  transition: background 0.2s;
+}
+.wp-strength-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  min-width: 64px;
+  text-align: right;
+}
+
+/* ── Keys tab extras ─────────────────────────────────────────────────────────── */
+.wp-header-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.wp-danger-zone { display: flex; flex-direction: column; gap: 4px; }
+.wp-field-full { width: 100%; }
+
+/* ── Recovery / import textarea ──────────────────────────────────────────────── */
+.wp-import-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-1);
+  font-size: 12px;
+  font-family: var(--mono);
+  padding: 9px 12px;
+  resize: vertical;
+  line-height: 1.6;
+}
+.wp-import-input:focus { outline: none; border-color: rgba(124,58,237,0.5); }

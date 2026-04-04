@@ -1,69 +1,158 @@
 /**
  * InferenceChain Wallet Utility
  *
- * Key scheme: secp256k1 (same as backend core/node/identity.py)
- *   private key  — 32-byte random hex
- *   public key   — 64-byte uncompressed point (x||y, no 04 prefix) hex
+ * Key scheme: secp256k1 — same as backend core/node/identity.py
+ *   mnemonic     — 12 BIP39 words (128-bit entropy)
+ *   private key  — first 32 bytes of BIP39 seed (sha256 fallback if out of range)
+ *   public key   — 64-byte uncompressed point hex (no 04 prefix)
  *   address      — SHA-256(pubkey_bytes)[:20] as 40-char hex
  *
- * Signing: SHA-256(tx_id_utf8) → secp256k1 sign → compact r||s hex (128 chars)
- * Matches NodeIdentity.sign_tx() in Python.
+ * Encryption: AES-256-GCM with PBKDF2-derived key (100k iterations, SHA-256)
+ * Private key is NEVER stored in plaintext — only in React state while unlocked.
  */
 
 import * as secp from '@noble/secp256k1';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { hmac } from '@noble/hashes/hmac.js';
 import { bytesToHex, hexToBytes, utf8ToBytes } from '@noble/hashes/utils.js';
+import * as bip39 from '@scure/bip39';
+import { wordlist } from '@scure/bip39/wordlists/english.js';
 
-// ── Wire up synchronous hashing for RFC 6979 deterministic signing (v3 API) ──
+// Wire up synchronous hashing for v3 API
 secp.hashes.sha256     = (msg) => sha256(msg);
 secp.hashes.hmacSha256 = (key, ...msgs) => hmac(sha256, key, secp.etc.concatBytes(...msgs));
 
-const STORAGE_KEY = 'ic_wallet_v1';
+const STORAGE_KEY = 'ic_wallet_v2';
+const PBKDF2_ITERS = 100_000;
 
 // ── Address derivation ────────────────────────────────────────────────────────
-// Matches Python: sha256(raw_64_byte_pubkey)[:20] as hex
 
 function pubkeyToAddress(pub64) {
-  const hash = sha256(pub64);
-  return bytesToHex(hash.slice(0, 20));
+  return bytesToHex(sha256(pub64).slice(0, 20));
 }
 
-// ── Keypair helpers ───────────────────────────────────────────────────────────
-
-function buildWallet(privKeyBytes) {
-  const pubFull = secp.getPublicKey(privKeyBytes, false); // Uint8Array(65) uncompressed
-  const pub64   = pubFull.slice(1);                       // strip 04 prefix → 64 bytes
+function privKeyToWalletPublics(privKeyBytes) {
+  const pubFull = secp.getPublicKey(privKeyBytes, false); // 65 bytes uncompressed
+  const pub64   = pubFull.slice(1);                       // strip 04 prefix
   return {
-    privateKey: bytesToHex(privKeyBytes),
-    publicKey:  bytesToHex(pub64),
-    address:    pubkeyToAddress(pub64),
+    publicKey: bytesToHex(pub64),
+    address:   pubkeyToAddress(pub64),
   };
+}
+
+// ── Mnemonic → private key ────────────────────────────────────────────────────
+// BIP39 seed (64 bytes) → first 32 bytes = private key candidate
+// If out of secp256k1 range (astronomically rare), hash the full seed
+
+function privFromMnemonic(mnemonic) {
+  const seed    = bip39.mnemonicToSeedSync(mnemonic);      // 64 bytes
+  let   privKey = seed.slice(0, 32);
+  // Validate: all-zero key is invalid (astronomically rare but guard it)
+  const allZero = privKey.every(b => b === 0);
+  if (allZero) {
+    privKey = sha256(seed);  // fallback: sha256 of full seed
+  }
+  return privKey;
+}
+
+// ── Web Crypto helpers (AES-256-GCM + PBKDF2) ────────────────────────────────
+
+function b64(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf)));
+}
+function unb64(str) {
+  return Uint8Array.from(atob(str), c => c.charCodeAt(0));
+}
+
+async function deriveKey(password, salt) {
+  const enc     = new TextEncoder();
+  const keyMat  = await crypto.subtle.importKey(
+    'raw', enc.encode(password), 'PBKDF2', false, ['deriveKey'],
+  );
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: PBKDF2_ITERS, hash: 'SHA-256' },
+    keyMat,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  );
+}
+
+async function encryptPrivKey(privKeyHex, password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv   = crypto.getRandomValues(new Uint8Array(12));
+  const key  = await deriveKey(password, salt);
+  const enc  = new TextEncoder();
+  const ct   = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(privKeyHex));
+  return { ciphertext: b64(ct), salt: b64(salt), iv: b64(iv) };
+}
+
+async function decryptPrivKey(stored, password) {
+  const salt = unb64(stored.salt);
+  const iv   = unb64(stored.iv);
+  const ct   = unb64(stored.ciphertext);
+  const key  = await deriveKey(password, salt);
+  const dec  = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
+  return new TextDecoder().decode(dec);
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export function generateWallet() {
-  return buildWallet(secp.utils.randomSecretKey());
+export function generateMnemonic() {
+  return bip39.generateMnemonic(wordlist, 128); // 12 words
 }
 
-export function walletFromPrivateKey(privHex) {
-  const clean = privHex.trim().replace(/^0x/i, '');
-  if (clean.length !== 64) throw new Error('Private key must be 64 hex characters (32 bytes)');
-  return buildWallet(hexToBytes(clean));
+export function validateMnemonic(phrase) {
+  return bip39.validateMnemonic(phrase.trim().toLowerCase(), wordlist);
+}
+
+/** Build wallet record (without private key) from mnemonic, encrypted with password. */
+export async function createWalletFromMnemonic(mnemonic, password) {
+  const privKeyBytes = privFromMnemonic(mnemonic);
+  const privKeyHex   = bytesToHex(privKeyBytes);
+  const { publicKey, address } = privKeyToWalletPublics(privKeyBytes);
+  const encrypted = await encryptPrivKey(privKeyHex, password);
+  return { address, publicKey, encrypted };
+}
+
+/** Import from raw hex private key, encrypted with password. */
+export async function createWalletFromPrivKey(privKeyHex, password) {
+  const clean = privKeyHex.trim().replace(/^0x/i, '');
+  if (clean.length !== 64) throw new Error('Private key must be 64 hex characters');
+  const privKeyBytes = hexToBytes(clean);
+  const { publicKey, address } = privKeyToWalletPublics(privKeyBytes);
+  const encrypted = await encryptPrivKey(clean, password);
+  return { address, publicKey, encrypted };
+}
+
+/** Recover wallet from mnemonic + set new password. */
+export async function recoverWalletFromMnemonic(mnemonic, password) {
+  if (!validateMnemonic(mnemonic)) throw new Error('Invalid mnemonic phrase');
+  return createWalletFromMnemonic(mnemonic, password);
+}
+
+/** Unlock: decrypt and return the private key hex. Throws if password is wrong. */
+export async function unlockWallet(password) {
+  const stored = loadStoredWallet();
+  if (!stored) throw new Error('No wallet found');
+  try {
+    const privKeyHex = await decryptPrivKey(stored.encrypted, password);
+    return privKeyHex;
+  } catch {
+    throw new Error('Incorrect password');
+  }
 }
 
 // ── Persistence ───────────────────────────────────────────────────────────────
+// Only stores: address, publicKey, encrypted blob — never raw private key.
 
-export function saveWallet(wallet) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({
-    privateKey: wallet.privateKey,
-    publicKey:  wallet.publicKey,
-    address:    wallet.address,
-  }));
+export function saveStoredWallet(walletRecord) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(walletRecord));
+  // Clear old v1 format if present
+  localStorage.removeItem('ic_wallet_v1');
 }
 
-export function loadWallet() {
+export function loadStoredWallet() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     return raw ? JSON.parse(raw) : null;
@@ -72,11 +161,31 @@ export function loadWallet() {
   }
 }
 
-export function clearWallet() {
+export function clearStoredWallet() {
   localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem('ic_wallet_v1');
 }
 
-// ── Canonical JSON (matches Python sha256_json) ───────────────────────────────
+// ── Password strength ─────────────────────────────────────────────────────────
+
+export function passwordStrength(pw) {
+  if (!pw) return { score: 0, label: '', color: '' };
+  let score = 0;
+  if (pw.length >= 8)  score++;
+  if (pw.length >= 12) score++;
+  if (/[A-Z]/.test(pw)) score++;
+  if (/[0-9]/.test(pw)) score++;
+  if (/[^A-Za-z0-9]/.test(pw)) score++;
+  const labels = ['', 'Weak', 'Fair', 'Good', 'Strong', 'Very Strong'];
+  const colors = ['', '#ef4444', '#f59e0b', '#3b82f6', '#10b981', '#10b981'];
+  return { score, label: labels[score] || 'Weak', color: colors[score] || '#ef4444' };
+}
+
+export function isPasswordAcceptable(pw) {
+  return pw && pw.length >= 8 && passwordStrength(pw).score >= 2;
+}
+
+// ── Signing ───────────────────────────────────────────────────────────────────
 
 function canonicalJson(obj) {
   if (obj === null || obj === undefined) return 'null';
@@ -89,49 +198,23 @@ function canonicalJson(obj) {
 }
 
 function computeTxId(txData) {
-  const str   = canonicalJson(txData);
-  const bytes = utf8ToBytes(str);
-  return bytesToHex(sha256(bytes));
+  return bytesToHex(sha256(utf8ToBytes(canonicalJson(txData))));
 }
 
-// ── Signing ───────────────────────────────────────────────────────────────────
-// sign(tx_id) → v3 sign() prehashes with sha256 by default, returns compact Uint8Array
-
 function signTxId(txId, privateKeyHex) {
-  const msgBytes = utf8ToBytes(txId);
-  const privKey  = hexToBytes(privateKeyHex);
-  // sign() with default opts: prehash=true (applies sha256 internally)
-  const sig      = secp.sign(msgBytes, privKey);
+  const sig = secp.sign(utf8ToBytes(txId), hexToBytes(privateKeyHex));
   return bytesToHex(sig.toCompactRawBytes());
 }
 
 // ── Transaction builders ──────────────────────────────────────────────────────
 
-export function buildTransferTx(wallet, recipient, amount, fee, nonce) {
+export function buildTransferTx(address, privateKeyHex, recipient, amount, fee, nonce) {
   const timestamp = Date.now() / 1000;
   const payload   = { amount };
-  const txData    = {
-    fee,
-    nonce,
-    payload,
-    recipient,
-    sender:    wallet.address,
-    timestamp,
-    tx_type:   'token_transfer',
-  };
+  const txData    = { fee, nonce, payload, recipient, sender: address, timestamp, tx_type: 'token_transfer' };
   const txId      = computeTxId(txData);
-  const signature = signTxId(txId, wallet.privateKey);
-  return {
-    tx_type:   'token_transfer',
-    sender:    wallet.address,
-    recipient,
-    payload,
-    nonce,
-    fee,
-    timestamp,
-    signature,
-    tx_id: txId,
-  };
+  const signature = signTxId(txId, privateKeyHex);
+  return { tx_type: 'token_transfer', sender: address, recipient, payload, nonce, fee, timestamp, signature, tx_id: txId };
 }
 
 // ── Formatting helpers ────────────────────────────────────────────────────────

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import './NavBar.css';
 import { chain as chainApi } from '../api/client';
 import WalletPanel from './WalletPanel';
-import { loadWallet, shortAddr } from '../utils/wallet';
+import { loadStoredWallet, shortAddr } from '../utils/wallet';
 
 const NAV = [
   { id: 'home', label: 'Home' },
@@ -18,13 +18,13 @@ export default function NavBar({ current, navigate }) {
   const [height,       setHeight]       = useState(null);
   const [open,         setOpen]         = useState(false);
   const [walletOpen,   setWalletOpen]   = useState(false);
-  const [walletAddr,   setWalletAddr]   = useState(() => loadWallet()?.address ?? null);
+  const [walletAddr,   setWalletAddr]   = useState(() => loadStoredWallet()?.address ?? null);
   const year = new Date().getFullYear();
 
   // Refresh wallet address label whenever panel closes (user may have imported/generated)
   const handleWalletClose = () => {
     setWalletOpen(false);
-    setWalletAddr(loadWallet()?.address ?? null);
+    setWalletAddr(loadStoredWallet()?.address ?? null);
   };
 
   useEffect(() => {
