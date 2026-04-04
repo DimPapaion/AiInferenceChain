@@ -101,6 +101,19 @@
   50%      { opacity: 0.4; }
 }
 
+.nav-github {
+  font-size: 13px;
+  padding: 6px 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.github-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
 .nav-docs {
   font-size: 13px;
   padding: 6px 14px;
@@ -148,6 +161,6 @@
 }
 
 @media (max-width: 768px) {
-  .navbar-links, .nav-docs { display: none; }
+  .navbar-links, .nav-docs, .nav-github { display: none; }
   .hamburger { display: flex; }
 }

@@ -6,12 +6,32 @@
  * Chain/state/tx/p2p endpoints are at root level.
  */
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000';
-const WS_BASE  = process.env.REACT_APP_WS_URL  || 'ws://localhost:8000';
+// When served from the backend (e.g. via ngrok at /ui), leave API_BASE empty
+// so all fetch calls use a relative path on the same origin.
+// In local dev (npm start), fall back to localhost:8000.
+const API_BASE = process.env.REACT_APP_API_URL !== undefined
+  ? process.env.REACT_APP_API_URL          // explicit override (including empty string)
+  : 'http://localhost:8000';               // local dev default
+
+// Derive WS base from window.location when API_BASE is relative (empty string).
+// This handles http→ws and https→wss automatically (ngrok uses https/wss).
+const WS_BASE = (() => {
+  if (process.env.REACT_APP_WS_URL !== undefined) return process.env.REACT_APP_WS_URL;
+  if (API_BASE !== '') return API_BASE.replace(/^http/, 'ws');
+  if (typeof window !== 'undefined') {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${proto}//${window.location.host}`;
+  }
+  return 'ws://localhost:8000';
+})();
+
+// Common request headers — ngrok-skip-browser-warning prevents the interstitial
+// page from blocking API calls when accessed through an ngrok tunnel.
+const EXTRA_HEADERS = { 'ngrok-skip-browser-warning': 'true' };
 
 async function request(path, opts = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...opts.headers },
+    headers: { 'Content-Type': 'application/json', ...EXTRA_HEADERS, ...opts.headers },
     ...opts,
   });
   if (!res.ok) {
@@ -70,6 +90,7 @@ export const dashboard = {
 export async function uploadModel(formData) {
   const res = await fetch(`${API_BASE}/dashboard/models/upload`, {
     method: 'POST',
+    headers: { ...EXTRA_HEADERS },
     body: formData,
   });
   if (!res.ok) {

@@ -1,5 +1,6 @@
+# -*- coding: utf-8 -*-
 """
-node_runner.py — InferenceChain node entry point.
+node_runner.py - InferenceChain node entry point.
 
 Runs three concurrent tasks in the same asyncio event loop:
   1. FastAPI / uvicorn  — REST API on --port        (default 8000)

@@ -83,8 +83,10 @@ def create_app(
         }
 
     # ── Frontend dashboard (served at /ui/) ───────────────────────────────────
-    frontend_dir = Path(__file__).parent.parent.parent / "frontend"
-    if frontend_dir.is_dir():
-        app.mount("/ui", StaticFiles(directory=str(frontend_dir), html=True), name="ui")
+    # Serve the compiled React build so the UI is accessible via /ui when running
+    # behind a tunnel (ngrok) or any reverse proxy.
+    frontend_build = Path(__file__).parent.parent.parent / "frontend" / "build"
+    if frontend_build.is_dir():
+        app.mount("/ui", StaticFiles(directory=str(frontend_build), html=True), name="ui")
 
     return app

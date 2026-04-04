@@ -72,11 +72,13 @@ class DashboardStatsResponse(BaseModel):
 
 
 class ModelUploadResponse(BaseModel):
-    model_id: str
-    name:     str
-    version:  str
-    status:   str
-    message:  str
+    model_id:     str
+    name:         str
+    version:      str
+    status:       str
+    message:      str
+    weights_hash: str = ""          # SHA-256 of the uploaded file
+    checks:       list[str] = []    # individual check results for display
 
 
 class ModelInfoResponse(BaseModel):
@@ -215,16 +217,21 @@ async def get_dashboard_stats(request: Request = None) -> DashboardStatsResponse
 
 @router.post("/models/upload", response_model=ModelUploadResponse)
 async def upload_model(
-    file:           UploadFile = File(...),
-    name:           str        = Form(...),
-    version:        str        = Form(...),
-    framework:      str        = Form(...),
-    description:    str        = Form(""),
-    input_shape:    str        = Form(...),
-    output_shape:   str        = Form(...),
-    min_accuracy:   float      = Form(0.0),
-    max_latency_ms: float      = Form(1000.0),
-    max_size_mb:    float      = Form(1000.0),
+    file:                UploadFile = File(...),
+    name:                str        = Form(...),
+    version:             str        = Form(...),
+    framework:           str        = Form(...),
+    description:         str        = Form(""),
+    input_shape:         str        = Form(...),
+    output_shape:        str        = Form(...),
+    min_accuracy:        float      = Form(0.0),
+    max_latency_ms:      float      = Form(1000.0),
+    max_size_mb:         float      = Form(1000.0),
+    # Extra fields used for on-chain registration (stored but not validated)
+    dataset_id:          str        = Form(""),
+    normalization_mean:  str        = Form(""),   # e.g. "0.4914,0.4822,0.4465"
+    normalization_std:   str        = Form(""),   # e.g. "0.2023,0.1994,0.2010"
+    architecture_notes:  str        = Form(""),   # free-text or JSON
 ) -> ModelUploadResponse:
     """
     Upload a model file for local validation (off-chain staging).
@@ -232,7 +239,7 @@ async def upload_model(
     Models that pass validation can then be submitted via a NODE_REGISTER_DNN
     transaction to enter the PoM admission process.
     """
-    import tempfile, os
+    import tempfile, os, hashlib
 
     model_registry  = _get_model_registry()
     model_validator = _get_model_validator()
@@ -244,39 +251,54 @@ async def upload_model(
             with open(file_path, "wb") as fh:
                 fh.write(content)
 
+            # Compute weights commitment hash (returned for on-chain registration)
+            weights_hash = hashlib.sha256(content).hexdigest()
+
             try:
                 spec = ModelSpec(
-                    name          = name,
-                    version       = version,
-                    framework     = Framework(framework.lower()),
-                    input_shape   = tuple(map(int, input_shape.strip("[]()").split(","))),
-                    output_shape  = tuple(map(int, output_shape.strip("[]()").split(","))),
+                    name           = name,
+                    version        = version,
+                    framework      = Framework(framework.lower()),
+                    input_shape    = tuple(map(int, input_shape.strip("[]()").split(","))),
+                    output_shape   = tuple(map(int, output_shape.strip("[]()").split(","))),
                     max_latency_ms = max_latency_ms,
-                    max_size_mb   = max_size_mb,
-                    min_accuracy  = min_accuracy,
-                    author        = "uploader",
-                    description   = description,
-                    model_path    = file_path,
+                    max_size_mb    = max_size_mb,
+                    min_accuracy   = min_accuracy,
+                    author         = "uploader",
+                    description    = description,
+                    model_path     = file_path,
                 )
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=f"Invalid model spec: {e}")
 
             validation_result = model_validator.validate(spec)
 
+            # Build human-readable check list for the frontend wizard
+            checks = [
+                f"{'✓' if c.passed else '✗'} {c.check_name}: {c.message}"
+                for c in getattr(validation_result, "check_results", [])
+            ]
+
             model_id = f"{name}_{version}_{datetime.now(timezone.utc).timestamp()}"
             model_registry.register_model(
-                model_id       = model_id,
-                name           = name,
-                author         = "uploader",
-                version        = version,
-                framework      = framework,
-                input_shape    = input_shape,
-                output_shape   = output_shape,
-                description    = description,
-                min_accuracy   = min_accuracy,
-                max_latency_ms = max_latency_ms,
-                max_size_mb    = max_size_mb,
-                model_path     = file_path,
+                model_id            = model_id,
+                name                = name,
+                author              = "uploader",
+                version             = version,
+                framework           = framework,
+                input_shape         = input_shape,
+                output_shape        = output_shape,
+                description         = (
+                    description
+                    + (f"\ndataset:{dataset_id}"          if dataset_id          else "")
+                    + (f"\nnorm_mean:{normalization_mean}" if normalization_mean  else "")
+                    + (f"\nnorm_std:{normalization_std}"   if normalization_std   else "")
+                    + (f"\narch:{architecture_notes}"      if architecture_notes  else "")
+                ),
+                min_accuracy        = min_accuracy,
+                max_latency_ms      = max_latency_ms,
+                max_size_mb         = max_size_mb,
+                model_path          = file_path,
             )
 
             if validation_result.passed:
@@ -289,11 +311,13 @@ async def upload_model(
                 message = f"Validation failed: {'; '.join(validation_result.errors)}"
 
             return ModelUploadResponse(
-                model_id = model_id,
-                name     = name,
-                version  = version,
-                status   = status,
-                message  = message,
+                model_id     = model_id,
+                name         = name,
+                version      = version,
+                status       = status,
+                message      = message,
+                weights_hash = weights_hash,
+                checks       = checks,
             )
 
     except HTTPException:

@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import './LandingPage.css';
-import { chain as chainApi, dashboard } from '../api/client';
+import { chain as chainApi } from '../api/client';
 
 const INNOVATIONS = [
   {
@@ -29,6 +29,21 @@ const INNOVATIONS = [
   },
 ];
 
+const NODE_CLUSTERS = {
+  left: [
+    { x: '6%',  y: '18%', label: 'Validator-α', delay: 0 },
+    { x: '14%', y: '42%', label: 'DNN-Node-01',  delay: 0.9 },
+    { x: '4%',  y: '62%', label: 'Validator-β', delay: 1.6 },
+    { x: '20%', y: '73%', label: 'PoS-Node-7',  delay: 0.4 },
+  ],
+  right: [
+    { x: '6%',  y: '22%', label: 'Validator-γ', delay: 0.6 },
+    { x: '16%', y: '48%', label: 'DNN-Node-08', delay: 1.2 },
+    { x: '4%',  y: '68%', label: 'Node-12',     delay: 0.8 },
+    { x: '22%', y: '33%', label: 'Validator-δ', delay: 1.7 },
+  ],
+};
+
 function AnimatedCounter({ target, duration = 1400 }) {
   const [val, setVal] = useState(0);
   useEffect(() => {
@@ -46,34 +61,221 @@ function AnimatedCounter({ target, duration = 1400 }) {
 }
 
 export default function LandingPage({ navigate }) {
-  const [stats, setStats] = useState(null);
+  const [stats,   setStats]   = useState(null);
+  const canvasRef             = useRef(null);
+  const heroRef               = useRef(null);
+  const animFrameRef          = useRef(null);
 
+  // Live stats
   useEffect(() => {
-    const load = () =>
-      chainApi.stats().then(setStats).catch(() => {});
+    const load = () => chainApi.stats().then(setStats).catch(() => {});
     load();
     const id = setInterval(load, 8000);
     return () => clearInterval(id);
+  }, []);
+
+  // Canvas particle system
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    const resize = () => {
+      canvas.width  = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+    };
+    resize();
+    window.addEventListener('resize', resize);
+
+    // 42 particles spread to left and right sides
+    const particles = Array.from({ length: 42 }, (_, i) => {
+      const left = i < 21;
+      return {
+        x: left
+          ? Math.random() * (canvas.width * 0.35)
+          : canvas.width * 0.65 + Math.random() * (canvas.width * 0.35),
+        y:      Math.random() * canvas.height,
+        r:      Math.random() * 1.4 + 0.4,
+        vx:     (Math.random() - 0.5) * 0.28,
+        vy:     (Math.random() - 0.5) * 0.28,
+        alpha:  Math.random(),
+        dalpha: (Math.random() * 0.008 + 0.002) * (Math.random() > 0.5 ? 1 : -1),
+      };
+    });
+
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.shadowBlur  = 0;
+      particles.forEach(p => {
+        p.x += p.vx;  p.y += p.vy;
+        p.alpha += p.dalpha;
+        if (p.alpha <= 0 || p.alpha >= 1) p.dalpha *= -1;
+        p.alpha = Math.max(0, Math.min(1, p.alpha));
+        if (p.x < 0)            p.x = canvas.width;
+        if (p.x > canvas.width) p.x = 0;
+        if (p.y < 0)            p.y = canvas.height;
+        if (p.y > canvas.height) p.y = 0;
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(97,196,255,${p.alpha * 0.75})`;
+        ctx.shadowColor = `rgba(97,196,255,${p.alpha * 0.5})`;
+        ctx.shadowBlur  = 8;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      });
+      animFrameRef.current = requestAnimationFrame(draw);
+    };
+    draw();
+
+    return () => {
+      window.removeEventListener('resize', resize);
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    };
+  }, []);
+
+  // Parallax on mousemove
+  useEffect(() => {
+    const hero = heroRef.current;
+    if (!hero) return;
+    const onMove = (e) => {
+      const rect = hero.getBoundingClientRect();
+      const x = ((e.clientX - rect.left)  / rect.width  - 0.5) * 22;
+      const y = ((e.clientY - rect.top)   / rect.height - 0.5) * 22;
+      hero.style.setProperty('--parallaxX', `${x}px`);
+      hero.style.setProperty('--parallaxY', `${y}px`);
+    };
+    hero.addEventListener('mousemove', onMove);
+    return () => hero.removeEventListener('mousemove', onMove);
   }, []);
 
   return (
     <div className="landing">
 
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <section className="hero">
-        <div className="hero-bg">
-          <div className="hero-glow hero-glow-1" />
-          <div className="hero-glow hero-glow-2" />
-          <div className="hero-grid" />
+      <section className="hero" ref={heroRef}>
+
+        {/* Canvas particles */}
+        <canvas ref={canvasRef} className="hero-canvas" />
+
+        {/* Ambient glow orb */}
+        <div className="hero-ambient" />
+
+        {/* Grid / circuit overlay */}
+        <div className="hero-grid-fade" />
+
+        {/* Left node cluster */}
+        <div className="node-cluster node-cluster-left">
+          {NODE_CLUSTERS.left.map((n, i) => (
+            <div
+              key={i}
+              className="nc-node"
+              style={{ top: n.y, left: n.x, animationDelay: `${n.delay}s` }}
+            >
+              <span className="nc-dot" />
+              <span className="nc-label">{n.label}</span>
+            </div>
+          ))}
         </div>
 
-        <div className="hero-content">
-          <div className="hero-badge">Research Preview · Testnet v0.1</div>
+        {/* Right node cluster */}
+        <div className="node-cluster node-cluster-right">
+          {NODE_CLUSTERS.right.map((n, i) => (
+            <div
+              key={i}
+              className="nc-node"
+              style={{ top: n.y, right: n.x, animationDelay: `${n.delay}s` }}
+            >
+              <span className="nc-dot" />
+              <span className="nc-label">{n.label}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Circuit horizon SVG */}
+        <svg
+          className="circuit-horizon"
+          viewBox="0 0 1200 220"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          <defs>
+            <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#61c4ff" stopOpacity="0.25" />
+              <stop offset="100%" stopColor="#61c4ff" stopOpacity="0" />
+            </linearGradient>
+            <filter id="glow">
+              <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+              <feMerge>
+                <feMergeNode in="coloredBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+          </defs>
+
+          {/* Perspective radiating lines from vanishing point */}
+          {[0, 120, 240, 360, 480, 600, 720, 840, 960, 1080, 1200].map((x, i) => (
+            <line
+              key={i}
+              x1={x} y1="0"
+              x2="600" y2="220"
+              stroke="url(#lineGrad)"
+              strokeWidth="0.8"
+            />
+          ))}
+
+          {/* Horizontal circuit cross-lines */}
+          {[40, 80, 130, 175].map((y, i) => {
+            const t = y / 220;
+            const x1 = 600 - (600 * (1 - t) * 1.05);
+            const x2 = 600 + (600 * (1 - t) * 1.05);
+            return (
+              <line
+                key={i}
+                x1={Math.max(0, x1)} y1={y}
+                x2={Math.min(1200, x2)} y2={y}
+                stroke="#61c4ff"
+                strokeOpacity={0.08 + i * 0.04}
+                strokeWidth="0.7"
+              />
+            );
+          })}
+
+          {/* Glowing dot nodes at intersections */}
+          {[
+            [600, 220], [480, 175], [720, 175],
+            [360, 130], [840, 130], [240, 80],
+            [960, 80],  [120, 40],  [1080, 40],
+          ].map(([cx, cy], i) => (
+            <circle
+              key={i}
+              cx={cx} cy={cy}
+              r={cy === 220 ? 4 : 2.5}
+              fill="#61c4ff"
+              fillOpacity={cy === 220 ? 0.9 : 0.55}
+              filter="url(#glow)"
+            />
+          ))}
+        </svg>
+
+        {/* Hero content — parallax shift applied */}
+        <div
+          className="hero-content"
+          style={{
+            transform: 'translate(calc(var(--parallaxX,0px)*-0.25), calc(var(--parallaxY,0px)*-0.25))',
+          }}
+        >
+          <div className="hero-eyebrow">
+            <span className="eyebrow-dot" />
+            Research Preview · Testnet v0.1
+          </div>
+
           <h1 className="hero-title">
             The Blockchain
             <br />
             <span className="hero-gradient">Native to AI Inference</span>
           </h1>
+
           <p className="hero-subtitle">
             InferenceChain is a decentralised network where DNN validators reach
             consensus on the <em>quality</em> of AI inference results — not just
@@ -81,10 +283,10 @@ export default function LandingPage({ navigate }) {
           </p>
 
           <div className="hero-actions">
-            <button className="btn btn-primary btn-lg" onClick={() => navigate('explorer')}>
+            <button className="btn hero-btn-primary btn-lg" onClick={() => navigate('explorer')}>
               Open Explorer →
             </button>
-            <button className="btn btn-ghost btn-lg" onClick={() => navigate('inference')}>
+            <button className="btn hero-btn-ghost btn-lg" onClick={() => navigate('inference')}>
               Submit Inference
             </button>
           </div>
@@ -93,16 +295,15 @@ export default function LandingPage({ navigate }) {
           {stats && (
             <div className="hero-stats">
               {[
-                { label: 'Chain Height',    val: stats.chain_height,   unit: '' },
-                { label: 'Total Txs',       val: stats.total_txs,      unit: '' },
-                { label: 'QoI Blocks',      val: stats.qoi_blocks,     unit: '' },
-                { label: 'DNN Validators',  val: stats.dnn_validators, unit: '' },
-                { label: 'TPS (60 s)',      val: stats.tps,            unit: '' },
+                { label: 'Chain Height',   val: stats.chain_height },
+                { label: 'Total Txs',      val: stats.total_txs },
+                { label: 'QoI Blocks',     val: stats.qoi_blocks },
+                { label: 'DNN Validators', val: stats.dnn_validators },
+                { label: 'TPS (60 s)',     val: stats.tps },
               ].map(s => (
                 <div key={s.label} className="hero-stat">
                   <span className="hero-stat-val">
                     <AnimatedCounter target={s.val} />
-                    {s.unit}
                   </span>
                   <span className="hero-stat-label">{s.label}</span>
                 </div>
