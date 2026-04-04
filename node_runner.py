@@ -99,8 +99,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--no-dev",    action="store_true", help="Disable /dev/* routes")
     p.add_argument("--f",         type=int, default=1,   help="BFT fault tolerance (f)")
     p.add_argument("--node-id",   default=None,          help="Override node_id (default: fresh key)")
-    p.add_argument("--db-path",   default=None,
-                   help="SQLite DB path (e.g. data/chain.db).  Omit for in-memory mode.")
+    p.add_argument("--db-path",   default="data/chain.db",
+                   help="SQLite DB path (default: data/chain.db).  Pass empty string for in-memory mode.")
     p.add_argument("--seed-file", default="data/peers.txt",
                    help="Peer seed file path (default: data/peers.txt)")
     p.add_argument("--image-dir", default="data/images",
@@ -162,7 +162,7 @@ async def run(args: argparse.Namespace) -> None:
         log.info("DNN genesis nodes    : %d pre-admitted", len(initial_dnn_nodes))
 
     # ── Node service (Chain + Mempool + optional DB) ───────────────────────────
-    if args.db_path:
+    if args.db_path and args.db_path.strip():
         svc = create_persistent_node_service(
             db_path             = args.db_path,
             initial_allocations = allocations,
@@ -176,7 +176,7 @@ async def run(args: argparse.Namespace) -> None:
             initial_dnn_nodes   = initial_dnn_nodes,
             f                   = effective_f,
         )
-        log.info("Running in-memory (no --db-path)")
+        log.info("Running in-memory (--db-path='')")
 
     log.info(
         "Chain initialised    : height=%d  tip=%s…",

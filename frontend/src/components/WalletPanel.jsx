@@ -367,7 +367,7 @@ export default function WalletPanel({ open, onClose }) {
     setSendStatus({ ok: null, msg: 'Submitting…' });
     try {
       const nonce = (account.nonce || 0) + 1;
-      const built = buildTransferTx(walletMeta.address, privateKeyHex, to, amt, fee, nonce);
+      const built = buildTransferTx(walletMeta.address, walletMeta.publicKey, privateKeyHex, to, amt, fee, nonce);
       const res   = await txApi.submit(built);
       if (res.accepted) {
         setSendStatus({ ok: true, msg: `Submitted — ${res.tx_id.slice(0,12)}…` });
@@ -707,8 +707,8 @@ export default function WalletPanel({ open, onClose }) {
     try {
       const nonce = (account.nonce || 0) + 1;
       const built = type === 'stake'
-        ? buildStakeTx(walletMeta.address, privateKeyHex, amt, fee, nonce)
-        : buildUnstakeTx(walletMeta.address, privateKeyHex, amt, fee, nonce);
+        ? buildStakeTx(walletMeta.address, walletMeta.publicKey, privateKeyHex, amt, fee, nonce)
+        : buildUnstakeTx(walletMeta.address, walletMeta.publicKey, privateKeyHex, amt, fee, nonce);
       const res = await txApi.submit(built);
       if (res.accepted) {
         setStakeStatus({ ok: true, msg: `${type === 'stake' ? 'Staked' : 'Unstaked'} ${formatInfer(amt)} INFER — tx ${res.tx_id.slice(0, 12)}…` });

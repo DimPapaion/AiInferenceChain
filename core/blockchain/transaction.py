@@ -328,14 +328,15 @@ class NodeRejectedPayload:
 
 @dataclass
 class Transaction:
-    tx_type:   TxType
-    sender:    str                  # 40-char hex address
-    payload:   Any                  # one of the payload dataclasses above
-    nonce:     int                  # per-sender monotonic counter
-    fee:       float       = 0.0    # INFER fee (0 for SYSTEM txs)
-    recipient: Optional[str] = None
-    timestamp: float       = field(default_factory=now)
-    signature: Optional[str] = None
+    tx_type:    TxType
+    sender:     str                   # 40-char hex address
+    payload:    Any                   # one of the payload dataclasses above
+    nonce:      int                   # per-sender monotonic counter
+    fee:        float        = 0.0    # INFER fee (0 for SYSTEM txs)
+    recipient:  Optional[str] = None
+    timestamp:  float        = field(default_factory=now)
+    signature:  Optional[str] = None
+    public_key: Optional[str] = None  # sender's 64-byte hex pubkey (wallet txs only)
 
     # Computed after init
     tx_id: str = field(init=False)
@@ -365,16 +366,17 @@ class Transaction:
 
     def to_dict(self) -> dict:
         return {
-            "tx_id":     self.tx_id,
-            "tx_type":   self.tx_type.value,
-            "family":    self.family.value,
-            "sender":    self.sender,
-            "recipient": self.recipient,
-            "payload":   self.payload.to_dict(),
-            "nonce":     self.nonce,
-            "fee":       self.fee,
-            "timestamp": self.timestamp,
-            "signature": self.signature,
+            "tx_id":      self.tx_id,
+            "tx_type":    self.tx_type.value,
+            "family":     self.family.value,
+            "sender":     self.sender,
+            "recipient":  self.recipient,
+            "payload":    self.payload.to_dict(),
+            "nonce":      self.nonce,
+            "fee":        self.fee,
+            "timestamp":  self.timestamp,
+            "signature":  self.signature,
+            "public_key": self.public_key,
         }
 
     @classmethod
@@ -382,14 +384,15 @@ class Transaction:
         tx_type = TxType(d["tx_type"])
         payload = _payload_from_dict(tx_type, d["payload"])
         tx = cls(
-            tx_type   = tx_type,
-            sender    = d["sender"],
-            payload   = payload,
-            nonce     = d["nonce"],
-            fee       = d.get("fee", 0.0),
-            recipient = d.get("recipient"),
-            timestamp = d["timestamp"],
-            signature = d.get("signature"),
+            tx_type    = tx_type,
+            sender     = d["sender"],
+            payload    = payload,
+            nonce      = d["nonce"],
+            fee        = d.get("fee", 0.0),
+            recipient  = d.get("recipient"),
+            timestamp  = d["timestamp"],
+            signature  = d.get("signature"),
+            public_key = d.get("public_key"),
         )
         # Preserve original tx_id (don't recompute from potentially different timestamp)
         tx.tx_id = d["tx_id"]

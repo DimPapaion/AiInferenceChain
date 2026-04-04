@@ -202,37 +202,40 @@ function computeTxId(txData) {
 }
 
 function signTxId(txId, privateKeyHex) {
-  const sig = secp.sign(utf8ToBytes(txId), hexToBytes(privateKeyHex));
+  // Python verify_signature does sha256(tx_id.encode()) before verifying,
+  // so we must pre-hash too (noble-secp256k1 expects a 32-byte message hash).
+  const msgHash = sha256(utf8ToBytes(txId));
+  const sig = secp.sign(msgHash, hexToBytes(privateKeyHex));
   return bytesToHex(sig.toCompactRawBytes());
 }
 
 // ── Transaction builders ──────────────────────────────────────────────────────
 
-export function buildTransferTx(address, privateKeyHex, recipient, amount, fee, nonce) {
+export function buildTransferTx(address, publicKey, privateKeyHex, recipient, amount, fee, nonce) {
   const timestamp = Date.now() / 1000;
   const payload   = { amount };
   const txData    = { fee, nonce, payload, recipient, sender: address, timestamp, tx_type: 'token_transfer' };
   const txId      = computeTxId(txData);
   const signature = signTxId(txId, privateKeyHex);
-  return { tx_type: 'token_transfer', sender: address, recipient, payload, nonce, fee, timestamp, signature, tx_id: txId };
+  return { tx_type: 'token_transfer', sender: address, recipient, payload, nonce, fee, timestamp, signature, tx_id: txId, public_key: publicKey };
 }
 
-export function buildStakeTx(address, privateKeyHex, amount, fee, nonce) {
+export function buildStakeTx(address, publicKey, privateKeyHex, amount, fee, nonce) {
   const timestamp = Date.now() / 1000;
   const payload   = { amount };
   const txData    = { fee, nonce, payload, recipient: null, sender: address, timestamp, tx_type: 'stake' };
   const txId      = computeTxId(txData);
   const signature = signTxId(txId, privateKeyHex);
-  return { tx_type: 'stake', sender: address, recipient: null, payload, nonce, fee, timestamp, signature, tx_id: txId };
+  return { tx_type: 'stake', sender: address, recipient: null, payload, nonce, fee, timestamp, signature, tx_id: txId, public_key: publicKey };
 }
 
-export function buildUnstakeTx(address, privateKeyHex, amount, fee, nonce) {
+export function buildUnstakeTx(address, publicKey, privateKeyHex, amount, fee, nonce) {
   const timestamp = Date.now() / 1000;
   const payload   = { amount };
   const txData    = { fee, nonce, payload, recipient: null, sender: address, timestamp, tx_type: 'unstake' };
   const txId      = computeTxId(txData);
   const signature = signTxId(txId, privateKeyHex);
-  return { tx_type: 'unstake', sender: address, recipient: null, payload, nonce, fee, timestamp, signature, tx_id: txId };
+  return { tx_type: 'unstake', sender: address, recipient: null, payload, nonce, fee, timestamp, signature, tx_id: txId, public_key: publicKey };
 }
 
 // Staking thresholds (mirrors core/blockchain/constants.py)

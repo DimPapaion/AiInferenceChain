@@ -77,15 +77,16 @@ class SubmitTxRequest(BaseModel):
     The client builds and signs the tx, then POSTs the serialised dict here.
     Matches Transaction.to_dict() exactly.
     """
-    tx_type:   str
-    sender:    str
-    payload:   dict[str, Any]
-    nonce:     int
-    fee:       float = 0.0
-    recipient: Optional[str] = None
-    timestamp: float
-    signature: Optional[str] = None
-    tx_id:     str
+    tx_type:    str
+    sender:     str
+    payload:    dict[str, Any]
+    nonce:      int
+    fee:        float = 0.0
+    recipient:  Optional[str] = None
+    timestamp:  float
+    signature:  Optional[str] = None
+    tx_id:      str
+    public_key: Optional[str] = None   # wallet sender's pubkey for sig verification
 
 
 class SubmitTxResponse(BaseModel):

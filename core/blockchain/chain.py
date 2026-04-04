@@ -107,6 +107,7 @@ class ChainState:
     inference_log: dict[str, dict]         = field(default_factory=dict)
     reputations:   dict[str, float]        = field(default_factory=dict)
     pom_states:    dict[str, dict]         = field(default_factory=dict)  # node_id → pom tracking
+    pubkeys:       dict[str, str]          = field(default_factory=dict)  # address → hex pubkey (wallet senders)
 
     def balance_of(self, address: str) -> float:
         return self.balances.get(address, 0.0)
@@ -218,11 +219,15 @@ class Chain:
         if tx.family == TxFamily.SIMPLE and tx.signature not in (None, "", "genesis", "dev"):
             node_info = self.state.nodes.get(tx.sender)
             if node_info is not None:
-                # Known node — verify against registered public key
+                # Known registered node — verify against registered public key
                 if not _verify_sig(node_info.public_key, tx.tx_id, tx.signature):
                     raise ValueError(f"Invalid signature on tx {tx.tx_id[:8]} from {tx.sender[:8]}")
-            # Unknown address (regular wallet) — public key not on-chain yet;
-            # full verification requires a separate public-key registry (future work)
+            else:
+                # Regular wallet address — look up pubkey from the tx itself or registry
+                pubkey = getattr(tx, "public_key", None) or self.state.pubkeys.get(tx.sender)
+                if pubkey:
+                    if not _verify_sig(pubkey, tx.tx_id, tx.signature):
+                        raise ValueError(f"Invalid signature on tx {tx.tx_id[:8]} from {tx.sender[:8]}")
 
         # Use intra-block nonce if sender already has a tx earlier in this block
         current_nonce = (
@@ -294,6 +299,8 @@ class Chain:
                     self.state.balance_of(tx.recipient) + amount
                 )
                 self.state.nonces[tx.sender] = tx.nonce
+                if tx.public_key and tx.sender not in self.state.pubkeys:
+                    self.state.pubkeys[tx.sender] = tx.public_key
 
             case TxType.STAKE:
                 amount = tx.payload.amount
@@ -304,6 +311,8 @@ class Chain:
                     self.state.stake_of(tx.sender) + amount
                 )
                 self.state.nonces[tx.sender] = tx.nonce
+                if tx.public_key and tx.sender not in self.state.pubkeys:
+                    self.state.pubkeys[tx.sender] = tx.public_key
 
             case TxType.UNSTAKE:
                 amount = tx.payload.amount
@@ -314,6 +323,8 @@ class Chain:
                     self.state.balance_of(tx.sender) + amount - tx.fee
                 )
                 self.state.nonces[tx.sender] = tx.nonce
+                if tx.public_key and tx.sender not in self.state.pubkeys:
+                    self.state.pubkeys[tx.sender] = tx.public_key
 
             case TxType.NODE_REGISTER:
                 # Legacy / genesis registration — treated as a PoS node, auto-admitted

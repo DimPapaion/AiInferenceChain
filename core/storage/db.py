@@ -178,6 +178,7 @@ def _state_to_dict(state: ChainState) -> dict:
         "contracts":     {k: v.to_dict() for k, v in state.contracts.items()},
         "inference_log": state.inference_log,
         "pom_states":    state.pom_states,
+        "pubkeys":       state.pubkeys,
     }
 
 
@@ -190,6 +191,7 @@ def _state_from_dict(d: dict) -> ChainState:
         reputations   = d.get("reputations", {}),
         inference_log = d.get("inference_log", {}),
         pom_states    = d.get("pom_states", {}),
+        pubkeys       = d.get("pubkeys", {}),
     )
     for addr, nd in d.get("nodes", {}).items():
         state.nodes[addr] = NodeInfo(
