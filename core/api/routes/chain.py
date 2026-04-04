@@ -68,3 +68,85 @@ async def get_block_by_hash(block_hash: str, svc: NodeService = Depends(get_serv
     if block is None:
         raise HTTPException(status_code=404, detail=f"Block {block_hash[:8]}… not found")
     return _serialise_block(block)
+
+
+@router.get("/blocks", response_model=list[dict])
+async def list_blocks(
+    limit: int = 20,
+    before: int | None = None,
+    svc: NodeService = Depends(get_service),
+):
+    """
+    Return up to `limit` block summaries ending at `before` height (exclusive).
+    Default: most-recent `limit` blocks.
+    """
+    tip     = svc.chain.height
+    end     = tip if before is None else min(before - 1, tip)
+    start   = max(0, end - limit + 1)
+    blocks  = []
+    for h in range(end, start - 1, -1):
+        b = svc.get_block(h)
+        if b is None:
+            continue
+        blocks.append({
+            "height":      b.header.height,
+            "hash":        b.hash,
+            "prev_hash":   b.header.prev_hash,
+            "block_type":  b.header.block_type.value,
+            "proposer_id": b.header.proposer_id,
+            "tx_count":    len(b.all_transactions),
+            "timestamp":   b.header.timestamp,
+            "view":        b.header.view,
+        })
+    return blocks
+
+
+@router.get("/stats", response_model=dict)
+async def chain_stats(svc: NodeService = Depends(get_service)):
+    """Aggregate chain statistics for the explorer dashboard."""
+    chain   = svc.chain
+    tip     = chain.height
+    blocks  = chain.blocks  # in-memory list
+
+    qoi_blocks   = sum(1 for b in blocks if b.header.block_type.value == "qoi")
+    pos_blocks   = sum(1 for b in blocks if b.header.block_type.value == "pos")
+    total_txs    = sum(len(b.all_transactions) for b in blocks)
+    total_fees   = sum(
+        sum(tx.fee for tx in b.simple_txs)
+        for b in blocks
+    )
+
+    # Rough TPS: txs in last 60 s
+    import time
+    now      = time.time()
+    recent   = [b for b in blocks if now - b.header.timestamp < 60]
+    recent_txs = sum(len(b.all_transactions) for b in recent)
+    tps      = round(recent_txs / 60, 3)
+
+    # Average block time from last 10 blocks
+    avg_block_time = None
+    if len(blocks) >= 2:
+        last10 = blocks[-min(10, len(blocks)):]
+        diffs  = [
+            last10[i].header.timestamp - last10[i-1].header.timestamp
+            for i in range(1, len(last10))
+        ]
+        avg_block_time = round(sum(diffs) / len(diffs), 2) if diffs else None
+
+    dnn_nodes = svc.chain.state.dnn_validators()
+    pos_nodes = svc.chain.state.pos_validators()
+
+    return {
+        "chain_height":    tip,
+        "total_blocks":    tip + 1,
+        "qoi_blocks":      qoi_blocks,
+        "pos_blocks":      pos_blocks,
+        "total_txs":       total_txs,
+        "total_fees":      round(total_fees, 4),
+        "tps":             tps,
+        "avg_block_time":  avg_block_time,
+        "dnn_validators":  len(dnn_nodes),
+        "pos_validators":  len(pos_nodes),
+        "mempool_size":    svc.mempool.size,
+        "tip_hash":        chain.tip.hash,
+    }
