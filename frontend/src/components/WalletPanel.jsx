@@ -157,17 +157,24 @@ export default function WalletPanel({ open, onClose }) {
 
   // ── Re-sync panel state when opened ────────────────────────────────────────
   useEffect(() => {
-    if (open) {
-      const s = loadStoredWallet();
-      if (!s) {
+    if (!open) return;
+
+    const s = loadStoredWallet();
+    setWalletMeta(s);
+
+    // Only normalize state when opening the panel.
+    // Do not force S_NO_WALLET during setup steps (mnemonic/password screens).
+    if (!s) {
+      if (panelState === S_LOCKED || panelState === S_UNLOCKED) {
         setPanelState(S_NO_WALLET);
-        setWalletMeta(null);
-      } else if (panelState === S_NO_WALLET) {
-        setPanelState(S_LOCKED);
-        setWalletMeta(s);
       }
+      return;
     }
-  }, [open, panelState]);
+
+    if (panelState === S_NO_WALLET) {
+      setPanelState(S_LOCKED);
+    }
+  }, [open]);
 
   // ── Close on outside click ──────────────────────────────────────────────────
   useEffect(() => {
