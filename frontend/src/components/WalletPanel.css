@@ -669,3 +669,74 @@
   line-height: 1.6;
 }
 .wp-import-input:focus { outline: none; border-color: rgba(124,58,237,0.5); }
+
+/* ── Stake tab ───────────────────────────────────────────────────────────────── */
+.wp-stake {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.wp-stake-summary {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.wp-stake-bar-wrap { display: flex; flex-direction: column; gap: 6px; }
+.wp-stake-bar {
+  height: 8px;
+  background: var(--bg-3);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.wp-stake-bar-fill {
+  height: 100%;
+  background: var(--blue);
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+.wp-stake-bar-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-family: var(--mono);
+  font-weight: 600;
+}
+.wp-stake-thresholds {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.wp-threshold {
+  font-size: 11px;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.wp-threshold.met { color: var(--green); }
+
+.wp-stake-section {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+}
+.wp-stake-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-1);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+.wp-stake-btn {
+  align-self: flex-end;
+  white-space: nowrap;
+  padding: 9px 16px !important;
+  width: auto !important;
+  font-size: 12px !important;
+}

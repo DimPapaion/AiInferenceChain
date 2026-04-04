@@ -5,8 +5,10 @@ import {
   createWalletFromMnemonic, createWalletFromPrivKey, recoverWalletFromMnemonic,
   unlockWallet,
   saveStoredWallet, loadStoredWallet, clearStoredWallet,
-  buildTransferTx, passwordStrength, isPasswordAcceptable,
+  buildTransferTx, buildStakeTx, buildUnstakeTx,
+  passwordStrength, isPasswordAcceptable,
   shortAddr, formatInfer,
+  MIN_STAKE_DNN, MIN_STAKE_POS,
 } from '../utils/wallet';
 import { state as stateApi, tx as txApi, wallet as walletApi } from '../api/client';
 
@@ -21,6 +23,7 @@ const S_IMPORT_KEY  = 'import_key';  // import from raw private key
 
 const TAB_ACCOUNT = 'account';
 const TAB_SEND    = 'send';
+const TAB_STAKE   = 'stake';
 const TAB_HISTORY = 'history';
 const TAB_KEYS    = 'keys';
 
@@ -147,6 +150,11 @@ export default function WalletPanel({ open, onClose }) {
   const [sendAmt,    setSendAmt]    = useState('');
   const [sendFee,    setSendFee]    = useState('0.1');
   const [sendStatus, setSendStatus] = useState(null);
+
+  // Stake
+  const [stakeAmt,    setStakeAmt]    = useState('');
+  const [unstakeAmt,  setUnstakeAmt]  = useState('');
+  const [stakeStatus, setStakeStatus] = useState(null);
 
   // History
   const [history,  setHistory]  = useState([]);
@@ -682,6 +690,108 @@ export default function WalletPanel({ open, onClose }) {
     </div>
   );
 
+  const handleStake = async (type) => {
+    setStakeStatus(null);
+    const raw = type === 'stake' ? stakeAmt : unstakeAmt;
+    const amt = parseFloat(raw);
+    const fee = 0.1;
+    if (!amt || amt <= 0) { setStakeStatus({ ok: false, msg: 'Enter a valid amount' }); return; }
+    if (!account) { setStakeStatus({ ok: false, msg: 'Account not loaded' }); return; }
+    if (type === 'stake' && account.balance < amt + fee) {
+      setStakeStatus({ ok: false, msg: `Insufficient balance (have ${formatInfer(account.balance)} INFER)` }); return;
+    }
+    if (type === 'unstake' && account.stake < amt) {
+      setStakeStatus({ ok: false, msg: `Insufficient stake (have ${formatInfer(account.stake)} staked)` }); return;
+    }
+    setStakeStatus({ ok: null, msg: 'Submitting…' });
+    try {
+      const nonce = (account.nonce || 0) + 1;
+      const built = type === 'stake'
+        ? buildStakeTx(walletMeta.address, privateKeyHex, amt, fee, nonce)
+        : buildUnstakeTx(walletMeta.address, privateKeyHex, amt, fee, nonce);
+      const res = await txApi.submit(built);
+      if (res.accepted) {
+        setStakeStatus({ ok: true, msg: `${type === 'stake' ? 'Staked' : 'Unstaked'} ${formatInfer(amt)} INFER — tx ${res.tx_id.slice(0, 12)}…` });
+        if (type === 'stake') { setStakeAmt(''); setAccount(a => a ? { ...a, balance: a.balance - amt - fee, stake: a.stake + amt, nonce } : a); }
+        else                  { setUnstakeAmt(''); setAccount(a => a ? { ...a, balance: a.balance + amt - fee, stake: a.stake - amt, nonce } : a); }
+      } else {
+        setStakeStatus({ ok: false, msg: res.reason || 'Rejected by node' });
+      }
+    } catch (e) { setStakeStatus({ ok: false, msg: e.message }); }
+  };
+
+  const renderStake = () => {
+    const bal   = account?.balance ?? 0;
+    const staked = account?.stake   ?? 0;
+    const stakePct = (staked / (staked + bal || 1)) * 100;
+    return (
+      <div className="wp-stake">
+        {/* Summary bar */}
+        <div className="wp-stake-summary">
+          <div className="wp-stake-bar-wrap">
+            <div className="wp-stake-bar">
+              <div className="wp-stake-bar-fill" style={{ width: `${Math.min(stakePct, 100)}%` }} />
+            </div>
+            <div className="wp-stake-bar-labels">
+              <span style={{ color: 'var(--blue)' }}>Staked: {formatInfer(staked)} INFER</span>
+              <span style={{ color: 'var(--text-3)' }}>Free: {formatInfer(bal)} INFER</span>
+            </div>
+          </div>
+          <div className="wp-stake-thresholds">
+            <span className={`wp-threshold ${staked >= MIN_STAKE_POS ? 'met' : ''}`}>
+              {staked >= MIN_STAKE_POS ? '✓' : '○'} PoS min: {MIN_STAKE_POS.toLocaleString()} INFER
+            </span>
+            <span className={`wp-threshold ${staked >= MIN_STAKE_DNN ? 'met' : ''}`}>
+              {staked >= MIN_STAKE_DNN ? '✓' : '○'} DNN min: {MIN_STAKE_DNN.toLocaleString()} INFER
+            </span>
+          </div>
+        </div>
+
+        {/* Stake */}
+        <div className="wp-stake-section">
+          <div className="wp-stake-section-title">Stake INFER</div>
+          <p className="wp-muted-sm">Lock tokens as collateral to participate in consensus and earn rewards.</p>
+          <div className="wp-row-2" style={{ marginTop: 10 }}>
+            <div className="wp-field">
+              <label className="wp-label">Amount</label>
+              <input className="wp-input" type="number" min="0" step="any" placeholder="0.00"
+                value={stakeAmt} onChange={e => setStakeAmt(e.target.value)} />
+            </div>
+            <button className="btn wp-btn-primary wp-stake-btn"
+              onClick={() => handleStake('stake')}
+              disabled={!stakeAmt || stakeStatus?.ok === null}>
+              Stake →
+            </button>
+          </div>
+        </div>
+
+        {/* Unstake */}
+        <div className="wp-stake-section">
+          <div className="wp-stake-section-title">Unstake INFER</div>
+          <p className="wp-muted-sm">Return staked tokens to your available balance.</p>
+          <div className="wp-row-2" style={{ marginTop: 10 }}>
+            <div className="wp-field">
+              <label className="wp-label">Amount</label>
+              <input className="wp-input" type="number" min="0" step="any" placeholder="0.00"
+                value={unstakeAmt} onChange={e => setUnstakeAmt(e.target.value)} />
+            </div>
+            <button className="btn wp-btn-ghost wp-stake-btn"
+              onClick={() => handleStake('unstake')}
+              disabled={!unstakeAmt || stakeStatus?.ok === null}>
+              Unstake
+            </button>
+          </div>
+        </div>
+
+        {stakeStatus && (
+          <div className={`wp-status ${stakeStatus.ok === true ? 'ok' : stakeStatus.ok === false ? 'err' : 'pending'}`}>
+            {stakeStatus.msg}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderHistory = () => (
     <div className="wp-history">
       <div className="wp-history-header">
@@ -732,6 +842,7 @@ export default function WalletPanel({ open, onClose }) {
         {[
           { id: TAB_ACCOUNT, label: 'Account' },
           { id: TAB_SEND,    label: 'Send' },
+          { id: TAB_STAKE,   label: 'Stake' },
           { id: TAB_HISTORY, label: 'History' },
           { id: TAB_KEYS,    label: 'Keys' },
         ].map(t => (
@@ -743,6 +854,7 @@ export default function WalletPanel({ open, onClose }) {
       <div className="wp-body">
         {tab === TAB_ACCOUNT && renderAccount()}
         {tab === TAB_SEND    && renderSend()}
+        {tab === TAB_STAKE   && renderStake()}
         {tab === TAB_HISTORY && renderHistory()}
         {tab === TAB_KEYS    && renderKeys()}
       </div>

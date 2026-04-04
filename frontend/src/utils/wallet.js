@@ -217,6 +217,28 @@ export function buildTransferTx(address, privateKeyHex, recipient, amount, fee, 
   return { tx_type: 'token_transfer', sender: address, recipient, payload, nonce, fee, timestamp, signature, tx_id: txId };
 }
 
+export function buildStakeTx(address, privateKeyHex, amount, fee, nonce) {
+  const timestamp = Date.now() / 1000;
+  const payload   = { amount };
+  const txData    = { fee, nonce, payload, recipient: null, sender: address, timestamp, tx_type: 'stake' };
+  const txId      = computeTxId(txData);
+  const signature = signTxId(txId, privateKeyHex);
+  return { tx_type: 'stake', sender: address, recipient: null, payload, nonce, fee, timestamp, signature, tx_id: txId };
+}
+
+export function buildUnstakeTx(address, privateKeyHex, amount, fee, nonce) {
+  const timestamp = Date.now() / 1000;
+  const payload   = { amount };
+  const txData    = { fee, nonce, payload, recipient: null, sender: address, timestamp, tx_type: 'unstake' };
+  const txId      = computeTxId(txData);
+  const signature = signTxId(txId, privateKeyHex);
+  return { tx_type: 'unstake', sender: address, recipient: null, payload, nonce, fee, timestamp, signature, tx_id: txId };
+}
+
+// Staking thresholds (mirrors core/blockchain/constants.py)
+export const MIN_STAKE_DNN = 1000;
+export const MIN_STAKE_POS = 500;
+
 // ── Formatting helpers ────────────────────────────────────────────────────────
 
 export function shortAddr(addr) {

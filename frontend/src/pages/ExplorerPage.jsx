@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import './ExplorerPage.css';
-import { chain as chainApi, tx as txApi, state as stateApi } from '../api/client';
+import { chain as chainApi, tx as txApi, state as stateApi, wallet as walletApi } from '../api/client';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const trunc = (s, n = 10) => s ? `${s.slice(0,n)}…` : '—';
@@ -13,6 +13,88 @@ const ago   = ts => {
 };
 const typeColor = t => t === 'qoi' ? 'badge-dnn' : 'badge-pos';
 const typeLabel = t => t === 'qoi' ? 'QoI' : 'PoS';
+
+// Clickable address — 40-char hex becomes a link
+function Addr({ value, onNavigate }) {
+  if (!value || value.length !== 40) return <span className="hash">{value || '—'}</span>;
+  return (
+    <button className="addr-link" onClick={() => onNavigate && onNavigate(value)} title={value}>
+      {trunc(value, 12)}
+    </button>
+  );
+}
+
+// ── Address detail panel ──────────────────────────────────────────────────────
+function AddressDetail({ address, onClose }) {
+  const [bal,  setBal]  = useState(null);
+  const [hist, setHist] = useState([]);
+  const [node, setNode] = useState(null);
+  const [load, setLoad] = useState(true);
+
+  useEffect(() => {
+    setLoad(true);
+    Promise.all([
+      stateApi.balance(address).catch(() => null),
+      walletApi.history(address, 30).catch(() => []),
+      stateApi.node(address).catch(() => null),
+    ]).then(([b, h, n]) => {
+      setBal(b); setHist(Array.isArray(h) ? h : []); setNode(n);
+    }).finally(() => setLoad(false));
+  }, [address]);
+
+  return (
+    <div className="blk-detail card">
+      <div className="detail-header">
+        <h3>Address</h3>
+        <button className="btn btn-ghost btn-sm" onClick={onClose}>✕ Close</button>
+      </div>
+      <div className="detail-grid">
+        <Row label="Address" val={<span className="hash">{address}</span>} />
+        {load && <Row label="" val={<span className="hash">Loading…</span>} />}
+        {bal && <>
+          <Row label="Balance"    val={`${bal.balance.toLocaleString()} INFER`} />
+          <Row label="Staked"     val={`${bal.stake.toLocaleString()} INFER`} />
+          <Row label="Reputation" val={bal.reputation?.toFixed(4)} />
+          <Row label="Nonce"      val={bal.nonce} />
+        </>}
+        {node && <>
+          <Row label="Node Type"   val={<span className={`badge badge-${node.node_type}`}>{node.node_type.toUpperCase()}</span>} />
+          <Row label="Model"       val={node.model_name || '—'} />
+          <Row label="Active"      val={node.is_active ? '✓ Active' : '—'} />
+          <Row label="PoM"         val={node.pom_verified ? '✓ Verified' : '—'} />
+        </>}
+      </div>
+
+      {hist.length > 0 && (
+        <>
+          <p className="section-title" style={{ marginTop: 20 }}>Recent Transactions ({hist.length})</p>
+          <div className="tx-table-wrap">
+            <table className="tx-table">
+              <thead><tr><th>Type</th><th>Counterparty</th><th>Amount</th><th>Block</th></tr></thead>
+              <tbody>
+                {hist.map((t, i) => {
+                  const isSend = t.sender === address;
+                  const peer   = isSend ? t.recipient : t.sender;
+                  const amt    = t.payload?.amount;
+                  return (
+                    <tr key={t.tx_id || i}>
+                      <td><span className="badge badge-pending">{t.tx_type?.replace(/_/g,' ')}</span></td>
+                      <td><span className="hash">{trunc(peer, 12)}</span></td>
+                      <td><span style={{ color: isSend ? 'var(--purple-light)' : 'var(--green)' }}>
+                        {isSend ? '-' : '+'}{amt != null ? amt.toLocaleString() : '—'}
+                      </span></td>
+                      <td>#{t.block_height ?? '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 // ── Stats row ─────────────────────────────────────────────────────────────────
 function StatsRow({ stats }) {
@@ -55,7 +137,7 @@ function BlockRow({ blk, selected, onClick }) {
 }
 
 // ── Block detail ──────────────────────────────────────────────────────────────
-function BlockDetail({ height, onClose }) {
+function BlockDetail({ height, onClose, onNavigateAddr }) {
   const [blk,  setBlk]  = useState(null);
   const [load, setLoad] = useState(true);
 
@@ -88,7 +170,7 @@ function BlockDetail({ height, onClose }) {
       <div className="detail-grid">
         <Row label="Hash"         val={<span className="hash">{h.hash}</span>} />
         <Row label="Prev Hash"    val={<span className="hash">{h.prev_hash}</span>} />
-        <Row label="Proposer"     val={<span className="hash">{h.proposer_id}</span>} />
+        <Row label="Proposer"     val={<Addr value={h.proposer_id} onNavigate={onNavigateAddr} />} />
         <Row label="Timestamp"    val={new Date(h.timestamp * 1000).toLocaleString()} />
         <Row label="Merkle Root"  val={<span className="hash">{h.merkle_root}</span>} />
         <Row label="View"         val={h.view} />
@@ -108,16 +190,17 @@ function BlockDetail({ height, onClose }) {
           <div className="tx-table-wrap">
             <table className="tx-table">
               <thead>
-                <tr><th>Category</th><th>Type</th><th>Sender</th><th>Fee</th><th>Payload</th></tr>
+                <tr><th>Category</th><th>Type</th><th>Sender</th><th>Recipient</th><th>Fee</th><th>Amount</th></tr>
               </thead>
               <tbody>
                 {allTxs.map((t, i) => (
                   <tr key={i}>
                     <td><span className={`badge badge-${t._cat === 'inference' ? 'dnn' : t._cat === 'system' ? 'warn' : 'pos'}`}>{t._cat}</span></td>
-                    <td><span className="hash">{t.tx_type || '—'}</span></td>
-                    <td><span className="hash">{trunc(t.sender, 12)}</span></td>
+                    <td><span className="tx-type-label">{(t.tx_type || '—').replace(/_/g,' ')}</span></td>
+                    <td><Addr value={t.sender} onNavigate={onNavigateAddr} /></td>
+                    <td><Addr value={t.recipient} onNavigate={onNavigateAddr} /></td>
                     <td>{t.fee ?? '—'}</td>
-                    <td className="payload-cell"><span className="hash">{JSON.stringify(t.payload).slice(0, 60)}…</span></td>
+                    <td>{t.payload?.amount != null ? t.payload.amount.toLocaleString() : '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -182,7 +265,7 @@ function TxPanel({ selectedTx, onSelectTx }) {
 }
 
 // ── Address / TX lookup ────────────────────────────────────────────────────────
-function LookupResult({ query, onClose }) {
+function LookupResult({ query, onClose, onNavigateAddr }) {
   const [result, setResult] = useState(null);
   const [kind,   setKind]   = useState(null);  // 'block'|'tx'|'address'|'node'
   const [load,   setLoad]   = useState(true);
@@ -226,34 +309,36 @@ function LookupResult({ query, onClose }) {
         <h3 style={{textTransform:'capitalize'}}>{kind} Result</h3>
         <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
       </div>
-      {kind === 'tx' && <TxResult data={result} />}
-      {kind === 'block' && <BlockSummary data={result} />}
+      {kind === 'tx'      && <TxResult     data={result} onNavigateAddr={onNavigateAddr} />}
+      {kind === 'block'   && <BlockSummary data={result} onNavigateAddr={onNavigateAddr} />}
       {kind === 'address' && <AddressResult data={result} />}
-      {kind === 'node' && <NodeResult data={result} />}
+      {kind === 'node'    && <NodeResult   data={result} onNavigateAddr={onNavigateAddr} />}
     </div>
   );
 }
 
-function TxResult({ data }) {
+function TxResult({ data, onNavigateAddr }) {
   return (
     <div className="detail-grid">
-      <Row label="TX ID"    val={<span className="hash">{data.tx_id}</span>} />
-      <Row label="Status"   val={<span className={`badge ${data.status === 'confirmed' ? 'badge-ok' : 'badge-pending'}`}>{data.status}</span>} />
-      <Row label="Type"     val={data.tx_type || '—'} />
-      <Row label="Sender"   val={<span className="hash">{data.sender || '—'}</span>} />
-      <Row label="Block"    val={data.block_height ?? '—'} />
-      <Row label="Payload"  val={<pre className="payload-pre">{JSON.stringify(data.payload, null, 2)}</pre>} />
+      <Row label="TX ID"     val={<span className="hash">{data.tx_id}</span>} />
+      <Row label="Status"    val={<span className={`badge ${data.status === 'confirmed' ? 'badge-ok' : 'badge-pending'}`}>{data.status}</span>} />
+      <Row label="Type"      val={(data.tx_type || '—').replace(/_/g, ' ')} />
+      <Row label="Sender"    val={<Addr value={data.sender} onNavigate={onNavigateAddr} />} />
+      <Row label="Recipient" val={data.recipient ? <Addr value={data.recipient} onNavigate={onNavigateAddr} /> : '—'} />
+      <Row label="Fee"       val={data.fee ?? '—'} />
+      <Row label="Block"     val={data.block_height ?? '—'} />
+      <Row label="Payload"   val={<pre className="payload-pre">{JSON.stringify(data.payload, null, 2)}</pre>} />
     </div>
   );
 }
-function BlockSummary({ data }) {
+function BlockSummary({ data, onNavigateAddr }) {
   const h = data.header || {};
   return (
     <div className="detail-grid">
       <Row label="Height"   val={h.height} />
       <Row label="Type"     val={<span className={`badge ${typeColor(h.block_type)}`}>{h.block_type}</span>} />
       <Row label="Hash"     val={<span className="hash">{h.hash}</span>} />
-      <Row label="Proposer" val={<span className="hash">{h.proposer_id}</span>} />
+      <Row label="Proposer" val={<Addr value={h.proposer_id} onNavigate={onNavigateAddr} />} />
       <Row label="TXs"      val={data.tx_count} />
       <Row label="Time"     val={new Date((h.timestamp || 0)*1000).toLocaleString()} />
     </div>
@@ -263,19 +348,19 @@ function AddressResult({ data }) {
   return (
     <div className="detail-grid">
       <Row label="Address"    val={<span className="hash">{data.address}</span>} />
-      <Row label="Balance"    val={`${data.balance} IC`} />
-      <Row label="Stake"      val={`${data.stake} IC`} />
+      <Row label="Balance"    val={`${data.balance?.toLocaleString()} INFER`} />
+      <Row label="Staked"     val={`${data.stake?.toLocaleString()} INFER`} />
       <Row label="Reputation" val={data.reputation?.toFixed(4)} />
       <Row label="Nonce"      val={data.nonce} />
     </div>
   );
 }
-function NodeResult({ data }) {
+function NodeResult({ data, onNavigateAddr }) {
   return (
     <div className="detail-grid">
       <Row label="Node ID"     val={<span className="hash">{data.node_id}</span>} />
       <Row label="Type"        val={<span className={`badge badge-${data.node_type}`}>{data.node_type}</span>} />
-      <Row label="Address"     val={<span className="hash">{data.address}</span>} />
+      <Row label="Address"     val={<Addr value={data.address} onNavigate={onNavigateAddr} />} />
       <Row label="Model"       val={data.model_name || '—'} />
       <Row label="Endpoint"    val={data.endpoint} />
       <Row label="PoM Verified"val={data.pom_verified ? '✓ Yes' : '—'} />
@@ -319,7 +404,10 @@ export default function ExplorerPage() {
   const [search,      setSearch]      = useState('');
   const [query,       setQuery]       = useState('');
   const [loadingBlk,  setLoadingBlk]  = useState(true);
-  const [before,      setBefore]      = useState(null);   // pagination
+  const [before,      setBefore]      = useState(null);
+  const [addrView,    setAddrView]    = useState(null);  // address being drilled into
+
+  const navigateAddr = (addr) => { setAddrView(addr); setSelectedBlk(null); setSelectedTx(null); };
 
   const loadStats = useCallback(() =>
     chainApi.stats().then(setStats).catch(() => {}), []);
@@ -370,6 +458,16 @@ export default function ExplorerPage() {
           key={query}
           query={query}
           onClose={() => { setQuery(''); setSearch(''); }}
+          onNavigateAddr={navigateAddr}
+        />
+      )}
+
+      {/* Address drill-down */}
+      {addrView && (
+        <AddressDetail
+          key={addrView}
+          address={addrView}
+          onClose={() => setAddrView(null)}
         />
       )}
 
@@ -431,6 +529,7 @@ export default function ExplorerPage() {
               key={selectedBlk}
               height={selectedBlk}
               onClose={() => setSelectedBlk(null)}
+              onNavigateAddr={navigateAddr}
             />
           )}
         </div>
@@ -450,7 +549,7 @@ export default function ExplorerPage() {
                 <h3>Transaction</h3>
                 <button className="btn btn-ghost btn-sm" onClick={() => setSelectedTx(null)}>✕</button>
               </div>
-              <TxResult data={selectedTx} />
+              <TxResult data={selectedTx} onNavigateAddr={navigateAddr} />
             </div>
           )}
         </div>
