@@ -7,7 +7,7 @@
  *   address      — SHA-256(pubkey_bytes)[:20] as 40-char hex
  *
  * Signing: SHA-256(tx_id_utf8) → secp256k1 sign → compact r||s hex (128 chars)
- * This matches NodeIdentity.sign_tx() in Python.
+ * Matches NodeIdentity.sign_tx() in Python.
  */
 
 import * as secp from '@noble/secp256k1';
@@ -15,17 +15,17 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { hmac } from '@noble/hashes/hmac.js';
 import { bytesToHex, hexToBytes, utf8ToBytes } from '@noble/hashes/utils.js';
 
-// Required: provide synchronous HMAC-SHA256 for RFC 6979 deterministic signing
-secp.etc.hmacSha256Sync = (k, ...msgs) =>
-  hmac(sha256, k, secp.etc.concatBytes(...msgs));
+// ── Wire up synchronous hashing for RFC 6979 deterministic signing (v3 API) ──
+secp.hashes.sha256     = (msg) => sha256(msg);
+secp.hashes.hmacSha256 = (key, ...msgs) => hmac(sha256, key, secp.etc.concatBytes(...msgs));
 
 const STORAGE_KEY = 'ic_wallet_v1';
 
 // ── Address derivation ────────────────────────────────────────────────────────
-// Matches Python pubkey_to_address: sha256(raw_64_byte_pubkey)[:20] as hex
+// Matches Python: sha256(raw_64_byte_pubkey)[:20] as hex
 
-function pubkeyToAddress(pubKey64) {
-  const hash = sha256(pubKey64);
+function pubkeyToAddress(pub64) {
+  const hash = sha256(pub64);
   return bytesToHex(hash.slice(0, 20));
 }
 
@@ -44,7 +44,7 @@ function buildWallet(privKeyBytes) {
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export function generateWallet() {
-  return buildWallet(secp.utils.randomPrivateKey());
+  return buildWallet(secp.utils.randomSecretKey());
 }
 
 export function walletFromPrivateKey(privHex) {
@@ -77,10 +77,6 @@ export function clearWallet() {
 }
 
 // ── Canonical JSON (matches Python sha256_json) ───────────────────────────────
-// json.dumps(data, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
-// Note: Python serialises float 0.0 as "0.0" but JS serialises 0 as "0".
-// Since the backend preserves the client-sent tx_id and doesn't verify
-// regular-wallet signatures yet, this mismatch is acceptable for this MVP.
 
 function canonicalJson(obj) {
   if (obj === null || obj === undefined) return 'null';
@@ -98,15 +94,15 @@ function computeTxId(txData) {
   return bytesToHex(sha256(bytes));
 }
 
-// ── Signing (matches NodeIdentity.sign_tx) ────────────────────────────────────
-// sign(tx_id) → sha256(tx_id_utf8_bytes) → secp256k1 sign_digest → r||s hex
+// ── Signing ───────────────────────────────────────────────────────────────────
+// sign(tx_id) → v3 sign() prehashes with sha256 by default, returns compact Uint8Array
 
 function signTxId(txId, privateKeyHex) {
   const msgBytes = utf8ToBytes(txId);
-  const digest   = sha256(msgBytes);
   const privKey  = hexToBytes(privateKeyHex);
-  const sig      = secp.sign(digest, privKey);
-  return sig.toCompactHex(); // 64-byte r||s hex (128 chars)
+  // sign() with default opts: prehash=true (applies sha256 internally)
+  const sig      = secp.sign(msgBytes, privKey);
+  return bytesToHex(sig.toCompactRawBytes());
 }
 
 // ── Transaction builders ──────────────────────────────────────────────────────
