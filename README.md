@@ -1,126 +1,119 @@
-# CIFAR-10 GPU Training Script
+# InferenceChain
 
-Complete test scripts for training a simple CNN on CIFAR-10 dataset using CUDA GPU acceleration.
+InferenceChain is a local-first blockchain + inference network prototype.
 
-## Files
+It combines:
+- A Python node runtime (FastAPI + P2P + consensus loop)
+- A DNN inference flow with QoI-style validation components
+- A React dashboard frontend for explorer, validators, inference, network, and whitepaper views
 
-1. **check_gpu_setup.py** - Verifies GPU and CUDA configuration
-2. **train_cifar10_gpu.py** - Main training script for CNN on CIFAR-10
-3. **requirements.txt** - Python package dependencies
+## Repository Layout
+
+- `core/` - blockchain, consensus, networking, API, registry, and serving logic
+- `node/` - node roles and identity helpers
+- `qoi/` - quality, proposer, and state-machine logic
+- `models/` - model architectures and weight registry support
+- `frontend/` - React dashboard app
+- `scripts/` - helper scripts (`start_testnet.bat`, `start_testnet.sh`)
+- `tests/` - unit/integration tests
+- `node_runner.py` - single node entry point
 
 ## Prerequisites
 
-### System Requirements
-- NVIDIA GPU (with CUDA Compute Capability 3.5+)
-- NVIDIA GPU Driver installed
-- CUDA Toolkit installed (11.8 or higher recommended)
-- cuDNN installed
+- Python 3.10+
+- Node.js 18+ and npm
+- Optional GPU + CUDA for model-related workflows
 
-### Software Setup
-
-1. **Install PyTorch with CUDA support:**
-   ```bash
-   # For CUDA 11.8
-   pip install torch==2.0.1 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu118
-   
-   # Or for CUDA 12.1
-   pip install torch==2.0.1 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu121
-   ```
-
-2. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-## Usage
-
-### Step 1: Verify GPU Setup
-Run the verification script first to ensure everything is configured correctly:
+## Python Setup
 
 ```bash
-python check_gpu_setup.py
+python -m venv .venv
+# Windows
+.venv\\Scripts\\activate
+# Linux/macOS
+source .venv/bin/activate
+
+pip install -r requirements.txt
 ```
 
-You should see output showing:
-- ✓ GPU availability confirmed
-- ✓ CUDA and cuDNN versions
-- ✓ GPU device name and memory
-- ✓ GPU computation test passed
-
-### Step 2: Run Training
-If verification passes, start the training:
+## Run a Single Node
 
 ```bash
-python train_cifar10_gpu.py
+python node_runner.py --port 8000 --db-path data/node0.db
 ```
 
-This will:
-1. **Detect and Display GPU Information:**
-   - GPU model name
-   - CUDA version
-   - cuDNN version
-   - Total GPU memory
-   - Current device being used
+Useful options:
+- `--peer http://127.0.0.1:8000` to bootstrap from another node
+- `--config config/testnet.yaml` to load network settings
+- `--node-type dnn --model resnet20 --weights-dir models/weights` for DNN role
 
-2. **Initialize Model:**
-   - Simple 3-layer CNN architecture
-   - All tensors **explicitly moved to GPU** with `.to(device)`
+API docs for a node are available at:
+- `http://localhost:<port>/docs`
 
-3. **Train on CIFAR-10:**
-   - Download dataset automatically (first run)
-   - Train for 5 epochs
-   - Uses 128 batch size with `pin_memory=True` for GPU optimization
-   - Validates GPU placement of tensors
-   - Saves best model to `best_model_gpu.pth`
+## Run Local Testnet
 
-4. **Display Results:**
-   - Training and test loss
-   - Accuracy metrics
-   - GPU memory usage statistics
+Windows:
+```bat
+scripts\\start_testnet.bat
+```
 
-## Key GPU Features
+Linux/macOS:
+```bash
+bash scripts/start_testnet.sh
+```
 
-✓ **Automatic GPU Detection** - Finds and lists all available GPUs
-✓ **Explicit GPU Placement** - All tensors and models verified on GPU
-✓ **GPU Memory Monitoring** - Tracks memory usage during training
-✓ **Optimized for GPU** - 
-  - cuDNN auto-tuner enabled (`cudnn.benchmark = True`)
-  - Pinned memory in data loaders
-  - Non-blocking tensor transfers
-✓ **No CPU Fallback** - Script exits if GPU not available
+Default script endpoints:
+- Dashboard/API gateway: `http://localhost:8010/ui/`
+- Docs: `http://localhost:8010/docs`
+- Additional node docs: `http://localhost:8011/docs`, `http://localhost:8012/docs`, `http://localhost:8013/docs`
 
-## Troubleshooting
+## Frontend (Dashboard)
 
-### ERROR: No GPU detected
-- Check NVIDIA driver: `nvidia-smi`
-- Verify CUDA installation
-- Check PyTorch CUDA version matches your CUDA Toolkit
+The frontend lives in `frontend/`.
 
-### ERROR: CUDA out of memory
-- Reduce `batch_size` in the script (currently 128)
-- Reduce model size or number of epochs
+Development:
+```bash
+cd frontend
+npm install
+npm start
+```
 
-### ERROR: CUDA driver error
-- Update NVIDIA drivers
-- Restart your system
-- Check GPU is not already in use by another process
+Production build:
+```bash
+cd frontend
+npm run build
+```
 
-## Model Architecture
+## Tests
 
-Simple CNN with:
-- 3 Convolutional blocks (32, 64, 128 filters)
-- 3 Max pooling layers
-- 3 Fully connected layers (256, 128, 10)
-- ReLU activations
-- Dropout regularization
+Run Python tests from repo root:
 
-## Performance Notes
+```bash
+pytest -q
+```
 
-- First run downloads ~170MB CIFAR-10 dataset
-- Training time depends on GPU (typically 2-5 minutes per epoch)
-- Best accuracy achieved: ~70-75% after 5 epochs
-- GPU memory usage: ~3-5 GB during training
+## Vercel Deployment Notes
 
----
+This repo includes `vercel.json` configured for a Create React App build.
 
-**IMPORTANT:** This script is designed to run EXCLUSIVELY on GPU. It will not fall back to CPU and will exit if no CUDA GPU is detected.
+Current build settings in `vercel.json`:
+- `buildCommand`: `npm install && CI=false npm run build`
+- `outputDirectory`: `build`
+- `installCommand`: `echo skip`
+
+For Vercel project settings, use:
+- Root Directory: `frontend`
+- Let `vercel.json` control build/install/output commands
+
+## Common Issues
+
+- Port already in use when starting testnet:
+  - stop previous node processes or free ports before re-running scripts
+- Frontend build errors on CI from warnings:
+  - `CI=false` is already applied in `vercel.json`
+- Missing frontend manifest files on deployment:
+  - ensure `frontend/package.json` and `frontend/package-lock.json` are committed
+
+## License
+
+Use and distribution terms are governed by the repository owner.
