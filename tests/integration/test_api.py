@@ -283,3 +283,86 @@ def test_p2p_ingest_valid_block(client):
         )
         # Ingesting the same block twice fails (height mismatch) — that's correct
         assert result["accepted"] is False
+
+# ═════════════════════════════════════════════════════════════════════════════
+# State — faucet
+# ═════════════════════════════════════════════════════════════════════════════
+
+def test_faucet_dispenses_tokens(client):
+    new_addr = "e" * 40
+    r = client.post("/state/faucet", json={"address": new_addr})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["success"] is True
+    assert data["amount"]  == pytest.approx(10_000.0)
+    assert data["balance"] == pytest.approx(10_000.0)
+
+
+def test_faucet_invalid_address_returns_422(client):
+    r = client.post("/state/faucet", json={"address": "not-a-valid-address"})
+    assert r.status_code == 422
+
+
+def test_faucet_high_balance_rejected(client):
+    # ALICE already has 500_000 at genesis β€" well above threshold
+    r = client.post("/state/faucet", json={"address": ALICE.address})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["success"] is False
+    assert "Balance" in data["message"] or "balance" in data["message"].lower()
+
+
+def test_faucet_already_used_rejected(client):
+    new_addr = "f" * 40
+    client.post("/state/faucet", json={"address": new_addr})       # first: ok
+    r = client.post("/state/faucet", json={"address": new_addr})   # second: blocked
+    assert r.status_code == 200
+    assert r.json()["success"] is False
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# State — transaction history
+# ═════════════════════════════════════════════════════════════════════════════
+
+def test_history_empty_for_unknown_address(client):
+    r = client.get(f"/state/history/{'9' * 40}")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_history_contains_confirmed_tx(client):
+    # Submit + seal a transfer from ALICE to BOB
+    body = _transfer_tx(ALICE.address, amount=250.0, fee=0.0, nonce=1)
+    client.post("/tx/submit", json=body)
+    client.post(f"/dev/seal?proposer_id={ALICE.address}")
+
+    r = client.get(f"/state/history/{ALICE.address}")
+    assert r.status_code == 200
+    history = r.json()
+    assert len(history) >= 1
+    # Each entry should have block metadata
+    entry = history[0]
+    assert "block_height" in entry
+    assert "status" in entry
+    assert entry["status"] == "confirmed"
+
+
+def test_history_visible_from_recipient_side(client):
+    body = _transfer_tx(ALICE.address, amount=250.0, fee=0.0, nonce=1)
+    client.post("/tx/submit", json=body)
+    client.post(f"/dev/seal?proposer_id={ALICE.address}")
+
+    r = client.get(f"/state/history/{BOB.address}")
+    assert r.status_code == 200
+    assert len(r.json()) >= 1
+
+
+def test_history_limit_respected(client):
+    # Seal a block with one tx, then request limit=0 (edge) and limit=1
+    body = _transfer_tx(ALICE.address, nonce=1)
+    client.post("/tx/submit", json=body)
+    client.post(f"/dev/seal?proposer_id={ALICE.address}")
+
+    r = client.get(f"/state/history/{ALICE.address}?limit=1")
+    assert r.status_code == 200
+    assert len(r.json()) <= 1

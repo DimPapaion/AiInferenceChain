@@ -13,6 +13,7 @@ from core.blockchain import (
     compute_merkle_root, now,
     MIN_STAKE,
 )
+from core.node.identity import make_test_identity
 
 ALICE   = "a" * 40
 BOB     = "b" * 40
@@ -222,6 +223,79 @@ class TestStateTransitions:
         slash    = make_slash_tx(ALICE, MIN_STAKE)
         chain.append(build_pos_block(chain, [], extra_system_txs=[slash]))
         assert chain.state.stake_of(ALICE) == pytest.approx(MIN_STAKE)
+
+
+# ── Wallet public_key registry & signature verification ───────────────────────
+
+class TestWalletPubkeyRegistry:
+    """
+    Tests for the public_key field on Transaction and the ChainState.pubkeys
+    registry that enables signature verification for wallet (non-node) senders.
+    """
+
+    def _make_wallet_identity(self):
+        """Generate a fresh wallet identity."""
+        return make_test_identity(seed=99)
+
+    def _make_signed_transfer(self, identity, recipient, amount, nonce, fee=0.0):
+        """Build a transfer signed by a real key pair."""
+        tx = Transaction(
+            tx_type    = TxType.TOKEN_TRANSFER,
+            sender     = identity.address,
+            recipient  = recipient,
+            payload    = TokenTransferPayload(amount=amount),
+            nonce      = nonce,
+            fee        = fee,
+            public_key = identity.public_key_hex,
+        )
+        tx.signature = identity.sign_tx(tx.tx_id)
+        return tx
+
+    def test_public_key_field_roundtrips_through_dict(self):
+        wallet = self._make_wallet_identity()
+        tx = self._make_signed_transfer(wallet, BOB, 100.0, nonce=1)
+        d  = tx.to_dict()
+        assert d["public_key"] == wallet.public_key_hex
+        tx2 = Transaction.from_dict(d)
+        assert tx2.public_key == wallet.public_key_hex
+
+    def test_public_key_none_by_default(self):
+        tx = make_transfer_tx(ALICE, BOB, 10.0, nonce=1)
+        assert tx.public_key is None
+        assert tx.to_dict()["public_key"] is None
+
+    def test_wallet_pubkey_stored_in_registry_after_transfer(self):
+        wallet = self._make_wallet_identity()
+        chain  = make_chain(allocations={wallet.address: 50_000.0})
+        tx     = self._make_signed_transfer(wallet, BOB, 1_000.0, nonce=1, fee=0.0)
+        chain.append(build_pos_block(chain, [tx]))
+        assert chain.state.pubkeys.get(wallet.address) == wallet.public_key_hex
+
+    def test_wallet_pubkey_only_stored_once(self):
+        wallet = self._make_wallet_identity()
+        chain  = make_chain(allocations={wallet.address: 50_000.0, BOB: 10_000.0})
+        tx1    = self._make_signed_transfer(wallet, BOB, 100.0, nonce=1, fee=0.0)
+        chain.append(build_pos_block(chain, [tx1]))
+        tx2    = self._make_signed_transfer(wallet, BOB, 100.0, nonce=2, fee=0.0)
+        chain.append(build_pos_block(chain, [tx2]))
+        # Entry registered once, still correct
+        assert chain.state.pubkeys.get(wallet.address) == wallet.public_key_hex
+
+    def test_valid_wallet_signature_accepted(self):
+        wallet = self._make_wallet_identity()
+        chain  = make_chain(allocations={wallet.address: 50_000.0})
+        tx     = self._make_signed_transfer(wallet, BOB, 500.0, nonce=1, fee=0.0)
+        # Should not raise
+        chain.append(build_pos_block(chain, [tx]))
+        assert chain.state.balance_of(BOB) == pytest.approx(500.0)
+
+    def test_tampered_signature_rejected(self):
+        wallet = self._make_wallet_identity()
+        chain  = make_chain(allocations={wallet.address: 50_000.0})
+        tx     = self._make_signed_transfer(wallet, BOB, 500.0, nonce=1, fee=0.0)
+        tx.signature = "aa" * 32  # garbage 64-byte hex sig
+        with pytest.raises(ValueError, match="Invalid signature"):
+            chain.append(build_pos_block(chain, [tx]))
 
     def test_slash_below_min_deactivates_node(self):
         chain    = make_chain()

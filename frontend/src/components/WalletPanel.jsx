@@ -100,8 +100,11 @@ function TxRow({ tx, myAddress }) {
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
+const AUTO_LOCK_MS = 5 * 60 * 1000; // 5 minutes
+
 export default function WalletPanel({ open, onClose }) {
-  const panelRef = useRef();
+  const panelRef    = useRef();
+  const lockTimerRef = useRef(null);
 
   // Panel state machine
   const stored = loadStoredWallet();
@@ -162,6 +165,27 @@ export default function WalletPanel({ open, onClose }) {
 
   // Faucet
   const [faucetStatus, setFaucetStatus] = useState(null);
+
+  // ── Auto-lock timer ───────────────────────────────────────────────────────
+  const resetAutoLock = useCallback(() => {
+    clearTimeout(lockTimerRef.current);
+    lockTimerRef.current = setTimeout(() => {
+      setPrivateKeyHex(null);
+      setAccount(null);
+      setHistory([]);
+      setFaucetStatus(null);
+      setPanelState(S_LOCKED);
+    }, AUTO_LOCK_MS);
+  }, []);
+
+  useEffect(() => {
+    if (panelState === S_UNLOCKED) {
+      resetAutoLock();
+    } else {
+      clearTimeout(lockTimerRef.current);
+    }
+    return () => clearTimeout(lockTimerRef.current);
+  }, [panelState, resetAutoLock]);
 
   // ── Re-sync panel state when opened ────────────────────────────────────────
   useEffect(() => {
@@ -865,7 +889,12 @@ export default function WalletPanel({ open, onClose }) {
   return (
     <>
       {open && <div className="wp-backdrop" />}
-      <div className={`wallet-panel ${open ? 'open' : ''}`} ref={panelRef}>
+      <div
+        className={`wallet-panel ${open ? 'open' : ''}`}
+        ref={panelRef}
+        onMouseMove={panelState === S_UNLOCKED ? resetAutoLock : undefined}
+        onKeyDown={panelState === S_UNLOCKED ? resetAutoLock : undefined}
+      >
         {panelState === S_NO_WALLET  && renderNoWallet()}
         {panelState === S_MNEMONIC   && renderMnemonic()}
         {panelState === S_SET_PASS   && renderSetPassword()}
