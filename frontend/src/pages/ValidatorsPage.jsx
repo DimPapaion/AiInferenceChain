@@ -136,7 +136,7 @@ export default function ValidatorsPage() {
   useEffect(() => {
     const load = () => {
       stateApi.active()
-        .then(data => { setNodes(data); setLoading(false); })
+        .then(data => { setNodes(Array.isArray(data) ? data : []); setLoading(false); })
         .catch(() => setLoading(false));
     };
     load();

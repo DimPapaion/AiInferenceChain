@@ -145,7 +145,7 @@ function TxPanel({ selectedTx, onSelectTx }) {
 
   useEffect(() => {
     const fetch = () =>
-      txApi.pending().then(data => { setTxs(data.slice(0, 30)); setLoad(false); }).catch(() => setLoad(false));
+      txApi.pending().then(data => { setTxs(Array.isArray(data) ? data.slice(0, 30) : []); setLoad(false); }).catch(() => setLoad(false));
     fetch();
     const id = setInterval(fetch, 4000);
     return () => clearInterval(id);
@@ -327,7 +327,7 @@ export default function ExplorerPage() {
   const loadBlocks = useCallback((beforeH = null) => {
     setLoadingBlk(true);
     chainApi.blocks(20, beforeH)
-      .then(data => { setBlocks(data); setLoadingBlk(false); })
+      .then(data => { setBlocks(Array.isArray(data) ? data : []); setLoadingBlk(false); })
       .catch(() => setLoadingBlk(false));
   }, []);
 

@@ -38,7 +38,12 @@ async function request(path, opts = {}) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || `HTTP ${res.status}`);
   }
-  return res.json().catch(() => null);
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error('Backend offline or unreachable');
+  }
 }
 
 // ── Chain ─────────────────────────────────────────────────────────────────────
