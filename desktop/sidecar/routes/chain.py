@@ -11,6 +11,12 @@ from pydantic import BaseModel
 
 router = APIRouter()
 
+_sync_state = {
+    "started_at": 0,
+    "target_height": 0,
+    "last_height": 0,
+}
+
 
 class SignRequest(BaseModel):
     checkpoint_path: str
@@ -114,6 +120,76 @@ def chain_status(endpoint: str = Query(default="http://localhost:8000")):
     except Exception:
         reachable = False
     return {"reachable": reachable, "endpoint": endpoint}
+
+
+@router.post("/sync/start")
+def sync_start(endpoint: str = Query(default="http://localhost:8000")):
+    """Mark sync start time and initialize internal sync state."""
+    _sync_state["started_at"] = int(time.time())
+    _sync_state["target_height"] = max(_sync_state["target_height"], _sync_state.get("last_height", 0))
+    return {"ok": True, "endpoint": endpoint, "started_at": _sync_state["started_at"]}
+
+
+@router.get("/sync/status")
+def sync_status(endpoint: str = Query(default="http://localhost:8000")):
+    """
+    Fetch live sync-related status from the chain node endpoint.
+    Returns peer count + height with step-style progress percentages.
+    """
+    import requests as http_requests
+
+    reachable = False
+    peer_count = 0
+    chain_height = 0
+
+    try:
+        h = http_requests.get(f"{endpoint}/health", timeout=5)
+        reachable = h.status_code == 200
+    except Exception:
+        reachable = False
+
+    if reachable:
+        try:
+            p = http_requests.get(f"{endpoint}/p2p/status", timeout=5).json()
+            peer_count = int(p.get("peer_count", 0) or 0)
+            chain_height = int(p.get("chain_height", 0) or 0)
+        except Exception:
+            pass
+
+        try:
+            ch = http_requests.get(f"{endpoint}/chain/height", timeout=5).json()
+            chain_height = max(chain_height, int(ch.get("height", 0) or 0))
+        except Exception:
+            pass
+
+    _sync_state["last_height"] = max(_sync_state.get("last_height", 0), chain_height)
+    _sync_state["target_height"] = max(_sync_state.get("target_height", 0), chain_height)
+
+    target = max(_sync_state["target_height"], 1)
+    progress_height = min(100, int((chain_height / target) * 100))
+    progress_peers = 100 if peer_count >= 4 else min(100, peer_count * 25)
+
+    # Split into two lanes to drive the UI exactly like a sync modal.
+    consensus = [
+        {"label": "Download checkpoint", "progress": 100 if chain_height > 0 else 5},
+        {"label": "Find consensus peers", "progress": progress_peers},
+        {"label": "Download slot data", "progress": progress_height},
+    ]
+    execution = [
+        {"label": "Find execution peers", "progress": progress_peers},
+        {"label": "Download state", "progress": progress_height},
+        {"label": "Download block data", "progress": progress_height},
+    ]
+
+    return {
+        "reachable": reachable,
+        "endpoint": endpoint,
+        "peer_count": peer_count,
+        "chain_height": chain_height,
+        "target_height": _sync_state["target_height"],
+        "consensus": consensus,
+        "execution": execution,
+    }
 
 
 @router.post("/save-manifest")

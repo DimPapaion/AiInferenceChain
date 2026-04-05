@@ -1,13 +1,16 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const http = require('http');
+const fs = require('fs');
 
 const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
 
 let mainWindow = null;
 let sidecarProcess = null;
 let sidecarPort = 47291; // fixed local port for Python sidecar
+let tray = null;
+let quitRequested = false;
 
 // ── Sidecar management ────────────────────────────────────────────────────────
 
@@ -108,7 +111,71 @@ function createWindow() {
 
   if (isDev) mainWindow.webContents.openDevTools();
 
+  mainWindow.on('close', async (event) => {
+    if (quitRequested) return;
+
+    event.preventDefault();
+    const choice = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      buttons: ['Run in Background', 'Quit App'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'Close InferenceChain',
+      message: 'Choose how to close InferenceChain.',
+      detail: 'Run in background keeps the node available from the system tray.',
+    });
+
+    if (choice.response === 1) {
+      quitRequested = true;
+      app.quit();
+      return;
+    }
+
+    createTray();
+    mainWindow.hide();
+  });
+
   mainWindow.on('closed', () => { mainWindow = null; });
+}
+
+function getTrayIcon() {
+  const ico = path.join(__dirname, '..', 'assets', 'icon.ico');
+  if (fs.existsSync(ico)) return nativeImage.createFromPath(ico);
+  return nativeImage.createFromPath(process.execPath);
+}
+
+function createTray() {
+  if (tray) return tray;
+  tray = new Tray(getTrayIcon());
+  tray.setToolTip('InferenceChain Desktop');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    {
+      label: 'Open InferenceChain',
+      click: () => {
+        if (!mainWindow) createWindow();
+        else {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      },
+    },
+    {
+      label: 'Quit',
+      click: () => {
+        quitRequested = true;
+        app.quit();
+      },
+    },
+  ]));
+
+  tray.on('double-click', () => {
+    if (mainWindow) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
+  return tray;
 }
 
 // ── IPC handlers ──────────────────────────────────────────────────────────────
@@ -162,8 +229,13 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  stopSidecar();
-  if (process.platform !== 'darwin') app.quit();
+  if (quitRequested) {
+    stopSidecar();
+    if (process.platform !== 'darwin') app.quit();
+  }
 });
 
-app.on('before-quit', stopSidecar);
+app.on('before-quit', () => {
+  quitRequested = true;
+  stopSidecar();
+});

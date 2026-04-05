@@ -17,7 +17,7 @@ function makeInitialSteps() {
 }
 
 export default function JoinNetworkPage({ apiBase }) {
-  const [status, setStatus] = useState({ reachable: false, endpoint: 'http://localhost:8000' });
+  const [status, setStatus] = useState({ reachable: false, endpoint: 'http://localhost:8000', peer_count: 0, chain_height: 0 });
   const [syncing, setSyncing] = useState(false);
   const [steps, setSteps] = useState(makeInitialSteps);
 
@@ -28,30 +28,41 @@ export default function JoinNetworkPage({ apiBase }) {
   }, [steps]);
 
   useEffect(() => {
-    fetch(`${apiBase}/chain/status`)
-      .then((r) => r.json())
-      .then(setStatus)
-      .catch(() => setStatus({ reachable: false, endpoint: 'http://localhost:8000' }));
+    let alive = true;
+    const tick = async () => {
+      try {
+        const resp = await fetch(`${apiBase}/chain/sync/status`);
+        const data = await resp.json();
+        if (!alive) return;
+        setStatus({
+          reachable: !!data.reachable,
+          endpoint: data.endpoint || 'http://localhost:8000',
+          peer_count: data.peer_count || 0,
+          chain_height: data.chain_height || 0,
+        });
+        if (Array.isArray(data.consensus) && Array.isArray(data.execution)) {
+          setSteps({ consensus: data.consensus, execution: data.execution });
+        }
+      } catch {
+        if (!alive) return;
+        setStatus({ reachable: false, endpoint: 'http://localhost:8000', peer_count: 0, chain_height: 0 });
+      }
+    };
+    tick();
+    const interval = setInterval(tick, 1400);
+    return () => {
+      alive = false;
+      clearInterval(interval);
+    };
   }, [apiBase]);
-
-  useEffect(() => {
-    if (!syncing) return;
-    const t = setInterval(() => {
-      setSteps((prev) => {
-        const bump = (arr) => arr.map((s) => ({ ...s, progress: Math.min(100, s.progress + Math.max(3, Math.floor(Math.random() * 16))) }));
-        return { consensus: bump(prev.consensus), execution: bump(prev.execution) };
-      });
-    }, 900);
-    return () => clearInterval(t);
-  }, [syncing]);
 
   useEffect(() => {
     if (overall >= 100) setSyncing(false);
   }, [overall]);
 
   const startSync = () => {
-    setSteps(makeInitialSteps());
     setSyncing(true);
+    fetch(`${apiBase}/chain/sync/start`, { method: 'POST' }).catch(() => {});
   };
 
   return (
@@ -70,6 +81,14 @@ export default function JoinNetworkPage({ apiBase }) {
             <div style={{ color: status.reachable ? 'var(--green)' : 'var(--orange)', fontWeight: 700 }}>
               {status.reachable ? 'Online' : 'Offline'}
             </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: 'var(--text-3)', textTransform: 'uppercase' }}>Peers</div>
+            <div style={{ fontWeight: 700 }}>{status.peer_count || 0}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: 'var(--text-3)', textTransform: 'uppercase' }}>Chain Height</div>
+            <div style={{ fontWeight: 700 }}>{status.chain_height || 0}</div>
           </div>
         </div>
       </div>
