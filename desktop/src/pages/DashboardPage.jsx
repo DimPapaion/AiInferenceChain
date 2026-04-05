@@ -1,19 +1,20 @@
 import React, { useState } from 'react';
 import './DashboardPage.css';
-import NodeStatus from './dashboard/NodeStatus';
-import TrainingHistory from './dashboard/TrainingHistory';
-import WalletPanel from './dashboard/WalletPanel';
-import NetworkView from './dashboard/NetworkView';
+import HomeHub from './dashboard/HomeHub';
+import JoinNetworkPage from './dashboard/JoinNetworkPage';
+import StakingPage from './dashboard/StakingPage';
+import TrainPage from './dashboard/TrainPage';
 
 const TABS = [
-  { id: 'node',     label: 'Node',     icon: '◎' },
-  { id: 'training', label: 'Training', icon: '◈' },
-  { id: 'network',  label: 'Network',  icon: '⌁' },
-  { id: 'wallet',   label: 'Wallet',   icon: '◇' },
+  { id: 'home',     label: 'Home',           icon: '⌂' },
+  { id: 'join',     label: 'Join Network',   icon: '◉' },
+  { id: 'staking',  label: 'Staking',        icon: '⟐' },
+  { id: 'train',    label: 'Train',          icon: '◈' },
+  { id: 'register', label: 'Register Model', icon: '⬢' },
 ];
 
 export default function DashboardPage({ apiBase }) {
-  const [tab, setTab] = useState('node');
+  const [tab, setTab] = useState('home');
 
   return (
     <div className="dash-root">
@@ -25,32 +26,26 @@ export default function DashboardPage({ apiBase }) {
             key={t.id}
             className={`dash-nav-btn ${tab === t.id ? 'active' : ''}`}
             onClick={() => setTab(t.id)}
+            title={t.label}
           >
             <span className="dash-nav-icon">{t.icon}</span>
             <span className="dash-nav-label">{t.label}</span>
           </button>
         ))}
         <div className="dash-sidebar-spacer" />
-        <button
-          className="dash-nav-btn danger"
-          onClick={() => {
-            if (window.confirm('Reset onboarding? You will need to re-train and re-submit your node.')) {
-              localStorage.removeItem('ic_onboarded');
-              window.location.reload();
-            }
-          }}
-        >
+        <button className="dash-nav-btn danger" onClick={() => window.location.reload()} title="Reload app">
           <span className="dash-nav-icon">↩</span>
-          <span className="dash-nav-label">Reset</span>
+          <span className="dash-nav-label">Reload</span>
         </button>
       </nav>
 
       {/* Content */}
       <main className="dash-content">
-        {tab === 'node'     && <NodeStatus     apiBase={apiBase} />}
-        {tab === 'training' && <TrainingHistory apiBase={apiBase} />}
-        {tab === 'network'  && <NetworkView    apiBase={apiBase} />}
-        {tab === 'wallet'   && <WalletPanel    apiBase={apiBase} />}
+        {tab === 'home'    && <HomeHub />}
+        {tab === 'join'    && <JoinNetworkPage apiBase={apiBase} />}
+        {tab === 'staking' && <StakingPage apiBase={apiBase} />}
+        {tab === 'train'   && <TrainPage apiBase={apiBase} />}
+        {tab === 'register' && <TrainPage apiBase={apiBase} initialMode="register" />}
       </main>
     </div>
   );

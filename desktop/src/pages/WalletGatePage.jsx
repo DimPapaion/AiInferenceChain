@@ -16,6 +16,7 @@ import {
 export default function WalletGatePage({ onUnlocked }) {
   const stored = useMemo(() => loadStoredWallet(), []);
   const [mode, setMode] = useState(stored ? 'unlock' : 'create');
+  const [showMnemonic, setShowMnemonic] = useState(false);
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
   const [mnemonic, setMnemonic] = useState(() => generateMnemonic());
@@ -116,10 +117,19 @@ export default function WalletGatePage({ onUnlocked }) {
         {mode === 'create' && (
           <div className="wg-body">
             <label>Mnemonic (12 words)</label>
-            <textarea value={mnemonic} onChange={(e) => setMnemonic(e.target.value)} rows={3} />
+            <textarea
+              className={showMnemonic ? '' : 'wg-secret'}
+              value={mnemonic}
+              onChange={(e) => setMnemonic(e.target.value)}
+              rows={3}
+            />
             <div className="wg-row">
               <button className="wg-ghost" onClick={() => setMnemonic(generateMnemonic())}>Regenerate</button>
+              <button className="wg-ghost" onClick={() => setShowMnemonic((v) => !v)}>
+                {showMnemonic ? 'Hide phrase' : 'Reveal phrase'}
+              </button>
             </div>
+            <div className="wg-hint">By default the phrase is blurred. Reveal only when you are ready to back it up.</div>
 
             <label>New Password</label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 8 characters" />

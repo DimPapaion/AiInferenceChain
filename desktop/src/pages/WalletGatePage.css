@@ -106,6 +106,20 @@
   resize: vertical;
 }
 
+.wg-secret {
+  filter: blur(6px);
+  opacity: 0.85;
+}
+
+.wg-secret:focus {
+  filter: blur(4px);
+}
+
+.wg-hint {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
 .wg-row {
   display: flex;
   gap: 8px;
