@@ -4,6 +4,7 @@ import HomeHub from './dashboard/HomeHub';
 import JoinNetworkPage from './dashboard/JoinNetworkPage';
 import StakingPage from './dashboard/StakingPage';
 import TrainPage from './dashboard/TrainPage';
+import SettingsPage from './dashboard/SettingsPage';
 
 const TABS = [
   { id: 'home',     label: 'Home',           icon: '⌂' },
@@ -11,6 +12,7 @@ const TABS = [
   { id: 'staking',  label: 'Staking',        icon: '⟐' },
   { id: 'train',    label: 'Train',          icon: '◈' },
   { id: 'register', label: 'Register Model', icon: '⬢' },
+  { id: 'settings', label: 'Settings',       icon: '⚙' },
 ];
 
 export default function DashboardPage({ apiBase }) {
@@ -46,6 +48,7 @@ export default function DashboardPage({ apiBase }) {
         {tab === 'staking' && <StakingPage apiBase={apiBase} />}
         {tab === 'train'   && <TrainPage apiBase={apiBase} />}
         {tab === 'register' && <TrainPage apiBase={apiBase} initialMode="register" />}
+        {tab === 'settings' && <SettingsPage />}
       </main>
     </div>
   );

@@ -15,4 +15,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // App paths
   getDataPath: () => ipcRenderer.invoke('app:dataPath'),
+
+  // App settings
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  setSettings: (settings) => ipcRenderer.invoke('settings:set', settings),
 });

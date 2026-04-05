@@ -12,6 +12,31 @@ let sidecarPort = 47291; // fixed local port for Python sidecar
 let tray = null;
 let quitRequested = false;
 
+const DEFAULT_SETTINGS = {
+  closeBehavior: 'ask', // ask | background | quit
+  startToTray: false,
+};
+
+function settingsPath() {
+  return path.join(app.getPath('userData'), 'settings.json');
+}
+
+function loadSettings() {
+  try {
+    const raw = fs.readFileSync(settingsPath(), 'utf-8');
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+  } catch {
+    return { ...DEFAULT_SETTINGS };
+  }
+}
+
+function saveSettings(next) {
+  const merged = { ...DEFAULT_SETTINGS, ...next };
+  fs.mkdirSync(app.getPath('userData'), { recursive: true });
+  fs.writeFileSync(settingsPath(), JSON.stringify(merged, null, 2), 'utf-8');
+  return merged;
+}
+
 // ── Sidecar management ────────────────────────────────────────────────────────
 
 /**
@@ -88,11 +113,13 @@ function waitForSidecar(retries = 30, interval = 500) {
 // ── Window ────────────────────────────────────────────────────────────────────
 
 function createWindow() {
+  const settings = loadSettings();
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
     minWidth: 960,
     minHeight: 640,
+    show: !settings.startToTray,
     backgroundColor: '#06080f',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     webPreferences: {
@@ -114,6 +141,20 @@ function createWindow() {
   mainWindow.on('close', async (event) => {
     if (quitRequested) return;
 
+    const current = loadSettings();
+
+    if (current.closeBehavior === 'quit') {
+      quitRequested = true;
+      return;
+    }
+
+    if (current.closeBehavior === 'background') {
+      event.preventDefault();
+      createTray();
+      mainWindow.hide();
+      return;
+    }
+
     event.preventDefault();
     const choice = await dialog.showMessageBox(mainWindow, {
       type: 'question',
@@ -134,6 +175,10 @@ function createWindow() {
     createTray();
     mainWindow.hide();
   });
+
+  if (settings.startToTray) {
+    createTray();
+  }
 
   mainWindow.on('closed', () => { mainWindow = null; });
 }
@@ -206,6 +251,10 @@ function registerIpcHandlers() {
 
   // App data directory for storing checkpoints
   ipcMain.handle('app:dataPath', () => app.getPath('userData'));
+
+  // App settings
+  ipcMain.handle('settings:get', () => loadSettings());
+  ipcMain.handle('settings:set', (_event, next = {}) => saveSettings(next));
 }
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
