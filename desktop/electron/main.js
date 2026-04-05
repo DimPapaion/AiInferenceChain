@@ -18,9 +18,13 @@ let sidecarPort = 47291; // fixed local port for Python sidecar
  */
 function getSidecarCmd() {
   if (isDev) {
+    const isWin = process.platform === 'win32';
     return {
-      cmd: 'python',
-      args: [path.join(__dirname, '..', 'sidecar', 'main.py')],
+      cmd: isWin ? 'py' : 'python3',
+      args: [
+        ...(isWin ? ['-3'] : []),
+        path.join(__dirname, '..', 'sidecar', 'main.py'),
+      ],
     };
   }
   const ext = process.platform === 'win32' ? '.exe' : '';
