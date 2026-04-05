@@ -79,7 +79,6 @@ a = Analysis(
         "pytest",
         "setuptools",
         "distutils",
-        "unittest",
         "doctest",
         "pdb",
         "profile",
