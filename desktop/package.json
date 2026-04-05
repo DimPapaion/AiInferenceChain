@@ -2,6 +2,7 @@
   "name": "inferencechain-desktop",
   "version": "0.1.0",
   "description": "InferenceChain desktop node client",
+  "author": "InferenceChain",
   "main": "electron/main.js",
   "homepage": "./",
   "private": true,
@@ -32,6 +33,7 @@
     "wait-on": "^7.2.0"
   },
   "build": {
+    "extends": null,
     "appId": "com.inferencechain.desktop",
     "productName": "InferenceChain",
     "directories": {
