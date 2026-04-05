@@ -10,8 +10,7 @@ const TABS = [
   { id: 'home',     label: 'Home',           icon: '⌂' },
   { id: 'join',     label: 'Join Network',   icon: '◉' },
   { id: 'staking',  label: 'Staking',        icon: '⟐' },
-  { id: 'train',    label: 'Train',          icon: '◈' },
-  { id: 'register', label: 'Register Model', icon: '⬢' },
+  { id: 'dnn',      label: 'Become DNN Node', icon: '⬢' },
   { id: 'settings', label: 'Settings',       icon: '⚙' },
 ];
 
@@ -46,8 +45,7 @@ export default function DashboardPage({ apiBase }) {
         {tab === 'home'    && <HomeHub />}
         {tab === 'join'    && <JoinNetworkPage apiBase={apiBase} />}
         {tab === 'staking' && <StakingPage apiBase={apiBase} />}
-        {tab === 'train'   && <TrainPage apiBase={apiBase} />}
-        {tab === 'register' && <TrainPage apiBase={apiBase} initialMode="register" />}
+        {tab === 'dnn' && <TrainPage apiBase={apiBase} />}
         {tab === 'settings' && <SettingsPage />}
       </main>
     </div>

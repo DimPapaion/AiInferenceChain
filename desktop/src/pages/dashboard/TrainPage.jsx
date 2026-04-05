@@ -19,8 +19,8 @@ export default function TrainPage({ apiBase, initialMode = 'new' }) {
 
   return (
     <div>
-      <div className="dash-panel-title">Train & Register</div>
-      <div className="dash-panel-sub">Train a new model or register a pre-trained model to become a DNN node.</div>
+      <div className="dash-panel-title">Become DNN Node</div>
+      <div className="dash-panel-sub">Choose whether to train a new model locally or register an existing trained model to join as a DNN validator.</div>
 
       <div className="train-switch">
         <button className={`dash-nav-btn-lite ${mode === 'new' ? 'active' : ''}`} onClick={() => setMode('new')}>

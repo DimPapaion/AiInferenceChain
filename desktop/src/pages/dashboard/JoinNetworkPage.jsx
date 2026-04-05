@@ -20,6 +20,9 @@ export default function JoinNetworkPage({ apiBase }) {
   const [status, setStatus] = useState({ reachable: false, endpoint: 'http://localhost:8000', peer_count: 0, chain_height: 0 });
   const [syncing, setSyncing] = useState(false);
   const [steps, setSteps] = useState(makeInitialSteps);
+  const [peerInput, setPeerInput] = useState('');
+  const [peers, setPeers] = useState([]);
+  const [peerError, setPeerError] = useState('');
 
   const overall = useMemo(() => {
     const all = [...steps.consensus, ...steps.execution];
@@ -43,6 +46,12 @@ export default function JoinNetworkPage({ apiBase }) {
         if (Array.isArray(data.consensus) && Array.isArray(data.execution)) {
           setSteps({ consensus: data.consensus, execution: data.execution });
         }
+
+        const peerResp = await fetch(`${apiBase}/chain/peers`);
+        const peerData = await peerResp.json();
+        if (alive) {
+          setPeers(Array.isArray(peerData.items) ? peerData.items : []);
+        }
       } catch {
         if (!alive) return;
         setStatus({ reachable: false, endpoint: 'http://localhost:8000', peer_count: 0, chain_height: 0 });
@@ -63,6 +72,23 @@ export default function JoinNetworkPage({ apiBase }) {
   const startSync = () => {
     setSyncing(true);
     fetch(`${apiBase}/chain/sync/start`, { method: 'POST' }).catch(() => {});
+  };
+
+  const addPeer = async () => {
+    if (!peerInput.trim()) return;
+    setPeerError('');
+    try {
+      const resp = await fetch(`${apiBase}/chain/peers/add`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: peerInput.trim(), network_endpoint: status.endpoint }),
+      });
+      const data = await resp.json();
+      if (!data.ok) throw new Error(data.error || 'Could not add peer');
+      setPeerInput('');
+    } catch (e) {
+      setPeerError(e.message);
+    }
   };
 
   return (
@@ -112,6 +138,29 @@ export default function JoinNetworkPage({ apiBase }) {
         <div className="sync-columns">
           <SyncColumn title="Consensus Layer" steps={steps.consensus} />
           <SyncColumn title="Execution Layer" steps={steps.execution} />
+        </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 12 }}>
+        <div className="sync-title" style={{ fontSize: 18 }}>Peer Discovery</div>
+        <div className="sync-sub">Add bootstrap peers and inspect the currently known peer list.</div>
+
+        <div className="train-file-row" style={{ marginTop: 12 }}>
+          <input value={peerInput} onChange={(e) => setPeerInput(e.target.value)} placeholder="http://1.2.3.4:8000" />
+          <button className="btn-primary" onClick={addPeer}>Add Peer</button>
+        </div>
+        {peerError && <div className="train-status-err">{peerError}</div>}
+
+        <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
+          {peers.length === 0 ? (
+            <div style={{ color: 'var(--text-3)', fontSize: 13 }}>No peers known yet.</div>
+          ) : peers.map((peer, idx) => (
+            <div key={idx} className="card" style={{ padding: 12, background: 'var(--bg-1)' }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 12 }} data-selectable>
+                {peer.endpoint || peer.url || JSON.stringify(peer)}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>

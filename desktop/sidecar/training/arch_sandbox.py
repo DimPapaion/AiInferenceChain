@@ -6,6 +6,7 @@ then does a dry forward pass to verify output shape.
 import ast
 import sys
 import importlib.util
+import inspect
 import traceback
 import tempfile
 import os
@@ -59,7 +60,7 @@ def ast_safety_check(source: str) -> None:
                     raise UnsafeCodeError(f"Blocked call: .{node.func.attr}()")
 
 
-def load_model_class(source: str, tmp_dir: str):
+def load_model_classes(source: str, tmp_dir: str):
     """
     Write source to a temp file and import it in an isolated manner.
     Returns the first nn.Module subclass found in the module.
@@ -79,7 +80,44 @@ def load_model_class(source: str, tmp_dir: str):
     ]
     if not candidates:
         raise ValueError("No nn.Module subclass found in the file.")
-    return candidates[0]
+
+    def _rank(cls):
+        name = cls.__name__.lower()
+        penalty = 0
+        if any(token in name for token in ["layer", "block", "transition", "basic", "bottleneck"]):
+            penalty += 50
+        if any(token in name for token in ["net", "model", "resnet", "densenet", "vgg", "mobilenet", "wide", "pyramid"]):
+            penalty -= 20
+        try:
+            sig = inspect.signature(cls.__init__)
+            params = [p for p in sig.parameters.values() if p.name != "self"]
+            required = [p for p in params if p.default is inspect._empty and p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY)]
+            penalty += len(required) * 5
+        except Exception:
+            pass
+        return penalty, name
+
+    return sorted(candidates, key=_rank)
+
+
+def instantiate_model(model_cls: Any, num_classes: int):
+    attempts = [
+        {"num_classes": num_classes},
+        {"n_classes": num_classes},
+        {"classes": num_classes},
+        {"out_features": num_classes},
+        {},
+    ]
+    last_error = None
+    for kwargs in attempts:
+        try:
+            return model_cls(**kwargs)
+        except TypeError as exc:
+            last_error = exc
+            continue
+    if last_error:
+        raise last_error
+    return model_cls()
 
 
 def dry_run(model_cls: Any, num_classes: int, input_shape=(1, 3, 32, 32)):
@@ -88,10 +126,7 @@ def dry_run(model_cls: Any, num_classes: int, input_shape=(1, 3, 32, 32)):
     Returns output shape on success.
     """
     import torch
-    try:
-        model = model_cls(num_classes=num_classes)
-    except TypeError:
-        model = model_cls()
+    model = instantiate_model(model_cls, num_classes)
 
     model.eval()
     with torch.no_grad():
@@ -118,12 +153,18 @@ def validate_architecture(source: str, num_classes: int = 10):
 
     with tempfile.TemporaryDirectory() as tmp:
         try:
-            model_cls = load_model_class(source, tmp)
-            output_shape = dry_run(model_cls, num_classes)
-            return {
-                "ok": True,
-                "model_name": model_cls.__name__,
-                "output_shape": output_shape,
-            }
+            candidates = load_model_classes(source, tmp)
+            errors = []
+            for model_cls in candidates:
+                try:
+                    output_shape = dry_run(model_cls, num_classes)
+                    return {
+                        "ok": True,
+                        "model_name": model_cls.__name__,
+                        "output_shape": output_shape,
+                    }
+                except Exception as exc:
+                    errors.append(f"{model_cls.__name__}: {exc}")
+            return {"ok": False, "error": "Could not instantiate a valid model class. Tried: " + " | ".join(errors[:6])}
         except Exception as e:
             return {"ok": False, "error": traceback.format_exc(limit=5)}

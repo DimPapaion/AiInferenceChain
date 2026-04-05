@@ -34,6 +34,11 @@ class SubmitRequest(BaseModel):
     network_endpoint: str = "http://localhost:8000"
 
 
+class AddPeerRequest(BaseModel):
+    endpoint: str
+    network_endpoint: str = "http://localhost:8000"
+
+
 @router.post("/sign-checkpoint")
 def sign_checkpoint(req: SignRequest):
     """
@@ -228,3 +233,29 @@ def list_pending():
         except Exception:
             pass
     return {"items": items}
+
+
+@router.get("/peers")
+def list_peers_proxy(endpoint: str = Query(default="http://localhost:8000")):
+    import requests as http_requests
+    try:
+        resp = http_requests.get(f"{endpoint}/p2p/peers", timeout=10)
+        peers = resp.json() if resp.ok else []
+        return {"ok": resp.ok, "items": peers, "endpoint": endpoint}
+    except Exception as e:
+        return {"ok": False, "items": [], "endpoint": endpoint, "error": str(e)}
+
+
+@router.post("/peers/add")
+def add_peer_proxy(req: AddPeerRequest):
+    import requests as http_requests
+    try:
+        resp = http_requests.post(
+            f"{req.network_endpoint}/p2p/peers/add",
+            json={"url": req.endpoint},
+            timeout=10,
+        )
+        data = resp.json() if resp.content else {}
+        return {"ok": resp.ok, "response": data}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
