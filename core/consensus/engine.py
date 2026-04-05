@@ -57,6 +57,7 @@ from core.blockchain.transaction import Transaction, TxType
 from core.blockchain.utils import compute_merkle_root, now
 from core.consensus.block_builder import build_pos_block, build_qoi_block
 from core.consensus.quorum import select_quorum, Quorum
+from core.consensus.ood import get_ood_registry, OODProfileRegistry
 from core.qoi.messages import (
     MsgType as QoIMsgType, BaseMessage, PrePrepareMsg,
     PrepareMsg, CommitMsg, ViewChangeMsg, NewViewMsg,
@@ -105,6 +106,9 @@ class ConsensusEngine:
 
         # Elected S-BFT quorum for the current QoI round
         self._active_quorum: Optional[Quorum] = None
+
+        # OOD profile registry (populated as DNN nodes pass PoM)
+        self._ood_registry: OODProfileRegistry = get_ood_registry()
 
         self._running = False
         self._p2p: Optional[object] = None   # P2PServer, set via attach_p2p()
@@ -325,12 +329,19 @@ class ConsensusEngine:
         model_hint = inference_tx.payload.model_hint   # "any" or specific model name
         dataset_id = getattr(inference_tx.payload, "dataset_id", None)
 
+        # Try to load the image tensor for OOD-biased quorum selection
+        image_tensor = None
+        if self._ood_registry and len(self._ood_registry) > 0:
+            image_tensor = _load_image_tensor_safe(image_hash, self.svc)
+
         quorum = select_quorum(
-            request_id = request_id,
-            block_hash = tip.hash,
-            eligible   = dnn_nodes,
-            model_name = None if model_hint == "any" else model_hint,
-            dataset_id = dataset_id,
+            request_id   = request_id,
+            block_hash   = tip.hash,
+            eligible     = dnn_nodes,
+            model_name   = None if model_hint == "any" else model_hint,
+            dataset_id   = dataset_id,
+            image_tensor = image_tensor,
+            ood_registry = self._ood_registry if image_tensor is not None else None,
         )
 
         if quorum is None:
@@ -345,8 +356,9 @@ class ConsensusEngine:
             quorum_nodes  = list(quorum.nodes)
             quorum_f_val  = quorum.f
             log.info(
-                "QoI quorum elected: size=%d f=%d threshold=%d seed=%s… request=%s…",
+                "QoI quorum elected: size=%d f=%d threshold=%d ood_biased=%s seed=%s… request=%s…",
                 quorum.quorum_size, quorum.f, quorum.threshold,
+                quorum.ood_biased,
                 quorum.seed[:12], request_id[:12],
             )
 
@@ -623,3 +635,33 @@ class ConsensusEngine:
     async def _broadcast_consensus(self, msg_type: str, data: dict) -> None:
         if self._p2p:
             await self._p2p.broadcast_consensus(msg_type, data)
+
+
+# ── Module-level helpers ──────────────────────────────────────────────────────
+
+def _load_image_tensor_safe(image_hash: str, svc) -> "Any | None":
+    """
+    Attempt to load an image tensor from the node's image store.
+    Returns None on any failure (OOD scoring is best-effort).
+    """
+    try:
+        import torch
+        import torchvision.transforms as T
+        from PIL import Image
+        import io
+
+        store = getattr(svc, "image_store", None)
+        if store is None:
+            return None
+        raw = store.get(image_hash)
+        if not raw:
+            return None
+        img = Image.open(io.BytesIO(raw)).convert("RGB")
+        transform = T.Compose([
+            T.Resize((32, 32)),
+            T.ToTensor(),
+            T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
+        return transform(img)
+    except Exception:
+        return None

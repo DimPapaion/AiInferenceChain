@@ -31,7 +31,8 @@ from __future__ import annotations
 
 import hashlib
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any, Optional
 
 from core.blockchain.chain import NodeInfo
 
@@ -56,12 +57,16 @@ class Quorum:
     f            : fault tolerance  = (quorum_size - 1) // 3
     threshold    : votes needed     = 2f + 1
     seed         : the hex seed used (for auditability / logging)
+    ood_scores   : {node_id: ood_score} if OOD-biased selection was used, else {}
+    ood_biased   : True if quorum was selected using OOD scores (not purely random)
     """
     nodes:       tuple[NodeInfo, ...]
     quorum_size: int
     f:           int
     threshold:   int
     seed:        str
+    ood_scores:  dict = field(default_factory=dict)
+    ood_biased:  bool = False
 
     def node_ids(self) -> frozenset[str]:
         return frozenset(n.node_id for n in self.nodes)
@@ -80,14 +85,16 @@ class Quorum:
 # ── Quorum selection ─────────────────────────────────────────────────────────
 
 def select_quorum(
-    request_id:   str,
-    block_hash:   str,
-    eligible:     list[NodeInfo],
-    model_name:   str | None = None,
-    dataset_id:   str | None = None,
-    target:       int        = QUORUM_TARGET,
-    floor:        int        = QUORUM_FLOOR,
-    ceiling:      int        = QUORUM_CEILING,
+    request_id:    str,
+    block_hash:    str,
+    eligible:      list[NodeInfo],
+    model_name:    str | None        = None,
+    dataset_id:    str | None        = None,
+    target:        int               = QUORUM_TARGET,
+    floor:         int               = QUORUM_FLOOR,
+    ceiling:       int               = QUORUM_CEILING,
+    image_tensor:  Any | None        = None,
+    ood_registry:  Any | None        = None,
 ) -> Quorum | None:
     """
     Select a deterministic, verifiable quorum for one QoI round.
@@ -102,12 +109,20 @@ def select_quorum(
     target       : ideal quorum size
     floor        : minimum quorum size (below this, return None — too few nodes)
     ceiling      : cap on quorum size
+    image_tensor : if provided together with ood_registry, enables OOD-biased
+                   selection — nodes most familiar with the image domain are
+                   preferred. Determinism is preserved: OOD scores are used to
+                   rank and stratify the pool; the seed breaks ties.
+    ood_registry : OODProfileRegistry instance (from core.consensus.ood)
 
     Returns
     -------
     Quorum  — the selected committee
     None    — not enough eligible nodes to form a viable quorum
     """
+    import logging
+    log = logging.getLogger(__name__)
+
     # ── Filter by model/dataset ───────────────────────────────────────────────
     pool = _filter_eligible(eligible, model_name, dataset_id)
 
@@ -119,10 +134,46 @@ def select_quorum(
     seed_hex   = hashlib.sha256(seed_input).hexdigest()
     seed_int   = int(seed_hex, 16)
 
-    # ── Sample without replacement ────────────────────────────────────────────
-    k   = min(max(floor, min(len(pool), target)), ceiling)
-    rng = random.Random(seed_int)
-    selected = rng.sample(pool, k)
+    k         = min(max(floor, min(len(pool), target)), ceiling)
+    ood_scores: dict[str, float] = {}
+    ood_biased  = False
+
+    # ── OOD-biased selection (when image_tensor + registry are available) ─────
+    # Strategy: rank pool by OOD score (ascending = more in-distribution).
+    # Take the top 2K nodes (or all if pool is small), then randomly sample K
+    # from that shortlist using the deterministic seed. This gives:
+    #   - bias toward in-distribution nodes (accuracy ↑)
+    #   - maintained unpredictability (adversary can't exactly predict quorum)
+    #   - full determinism (any node can reproduce the selection)
+    if image_tensor is not None and ood_registry is not None:
+        try:
+            from core.consensus.ood import rank_nodes_by_ood
+            node_ids   = [n.node_id for n in pool]
+            ranked     = rank_nodes_by_ood(node_ids, image_tensor, ood_registry)
+            ood_scores = {nid: sc for nid, sc in ranked}
+
+            # Keep only nodes with finite scores (calibrated scorers)
+            known  = [(nid, sc) for nid, sc in ranked if sc < float("inf")]
+            unknown = [(nid, sc) for nid, sc in ranked if sc == float("inf")]
+
+            # Build shortlist: top-2K of known nodes, padded with unknowns
+            shortlist_ids = [nid for nid, _ in (known[:2 * k] + unknown)]
+            id_to_node    = {n.node_id: n for n in pool}
+            shortlist     = [id_to_node[nid] for nid in shortlist_ids if nid in id_to_node]
+
+            if len(shortlist) >= floor:
+                pool      = shortlist
+                ood_biased = True
+                log.debug(
+                    "OOD-biased quorum: shortlisted %d/%d nodes (k=%d)",
+                    len(shortlist), len(eligible), k,
+                )
+        except Exception as exc:
+            log.warning("OOD quorum scoring failed, falling back to pure random: %s", exc)
+
+    # ── Sample without replacement from pool ─────────────────────────────────
+    rng      = random.Random(seed_int)
+    selected = rng.sample(pool, min(k, len(pool)))
 
     # Sort by node_id for a canonical, deterministic ordering
     selected.sort(key=lambda n: n.node_id)
@@ -137,6 +188,8 @@ def select_quorum(
         f           = f,
         threshold   = threshold,
         seed        = seed_hex,
+        ood_scores  = ood_scores,
+        ood_biased  = ood_biased,
     )
 
 

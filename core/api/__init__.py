@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from core.api.node_service import NodeService
-from core.api.routes import chain, state, tx, inference, p2p, dev, dashboard, websocket
+from core.api.routes import chain, state, tx, inference, p2p, dev, dashboard, websocket, llm
 
 
 def create_app(
@@ -26,7 +26,8 @@ def create_app(
     endpoint:     str  = "http://0.0.0.0:8000",
     dev_mode:     bool = True,
     cors_origins: list[str] | None = None,
-    image_store=None,
+    image_store   = None,
+    orchestrator  = None,      # InferenceOrchestrator | None
 ) -> FastAPI:
     """
     Build and return the FastAPI application.
@@ -60,6 +61,7 @@ def create_app(
     app.state.node_id      = node_id
     app.state.endpoint     = endpoint
     app.state.image_store  = image_store
+    app.state.orchestrator = orchestrator
 
     # ── Routes ────────────────────────────────────────────────────────────────
     app.include_router(chain.router)
@@ -69,6 +71,7 @@ def create_app(
     app.include_router(p2p.router)
     app.include_router(dashboard.router)
     app.include_router(websocket.router)
+    app.include_router(llm.router)
     if dev_mode:
         app.include_router(dev.router)
 
