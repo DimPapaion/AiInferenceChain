@@ -3,6 +3,8 @@ import './App.css';
 import AppShell from './components/AppShell';
 import WizardPage from './pages/WizardPage';
 import DashboardPage from './pages/DashboardPage';
+import WalletGatePage from './pages/WalletGatePage';
+import { getUnlockedPriv } from './utils/wallet';
 
 /**
  * Persistence key — once the user completes onboarding we remember it.
@@ -14,6 +16,7 @@ export default function App() {
   const [onboarded, setOnboarded] = useState(
     () => localStorage.getItem(ONBOARDED_KEY) === 'true'
   );
+  const [walletUnlocked, setWalletUnlocked] = useState(() => !!getUnlockedPriv());
   const [sidecarPort, setSidecarPort] = useState(47291);
 
   useEffect(() => {
@@ -31,9 +34,11 @@ export default function App() {
 
   return (
     <AppShell>
-      {onboarded
-        ? <DashboardPage apiBase={apiBase} />
-        : <WizardPage apiBase={apiBase} onComplete={handleOnboardingComplete} />
+      {!walletUnlocked
+        ? <WalletGatePage onUnlocked={() => setWalletUnlocked(true)} />
+        : onboarded
+          ? <DashboardPage apiBase={apiBase} />
+          : <WizardPage apiBase={apiBase} onComplete={handleOnboardingComplete} />
       }
     </AppShell>
   );

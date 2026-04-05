@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import '../WizardPage.css';
 import './StepSubmit.css';
+import { getUnlockedPriv } from '../../utils/wallet';
 
 export default function StepSubmit({
   apiBase,
@@ -24,6 +25,11 @@ export default function StepSubmit({
       .then((r) => r.json())
       .then((d) => setChainOnline(d.reachable))
       .catch(() => setChainOnline(false));
+
+    const unlocked = getUnlockedPriv();
+    if (unlocked && unlocked.length === 64) {
+      setPrivateKey(unlocked);
+    }
   }, [apiBase]);
 
   const hashString = async (str) => {

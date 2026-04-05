@@ -3,7 +3,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const http = require('http');
 
-const isDev = process.env.NODE_ENV === 'development';
+const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
 
 let mainWindow = null;
 let sidecarProcess = null;

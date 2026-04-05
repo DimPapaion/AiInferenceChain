@@ -1,0 +1,143 @@
+.wg-root {
+  min-height: calc(100vh - 42px);
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(900px 360px at 10% 100%, rgba(59, 130, 246, 0.12), transparent 60%),
+    radial-gradient(700px 300px at 90% 0%, rgba(124, 58, 237, 0.16), transparent 56%),
+    var(--bg-0);
+}
+
+.wg-brand-bg {
+  position: absolute;
+  inset: auto 0 30px 0;
+  text-align: center;
+  font-size: clamp(48px, 12vw, 170px);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: rgba(255, 255, 255, 0.04);
+  pointer-events: none;
+  user-select: none;
+}
+
+.wg-card {
+  width: min(860px, 100%);
+  background: linear-gradient(180deg, rgba(17, 24, 39, 0.96), rgba(12, 16, 24, 0.98));
+  border: 1px solid var(--border-md);
+  box-shadow: var(--shadow), var(--shadow-glow);
+  border-radius: 16px;
+  padding: 26px;
+  z-index: 1;
+}
+
+.wg-title {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin-bottom: 6px;
+}
+
+.wg-sub {
+  color: var(--text-2);
+  font-size: 14px;
+  margin-bottom: 14px;
+}
+
+.wg-stored {
+  font-size: 13px;
+  color: var(--text-2);
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 8px 10px;
+  margin-bottom: 14px;
+}
+
+.wg-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.wg-tab {
+  border: 1px solid var(--border);
+  background: var(--bg-3);
+  color: var(--text-2);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.wg-tab.active {
+  background: rgba(124, 58, 237, 0.16);
+  color: var(--purple-light);
+  border-color: rgba(124, 58, 237, 0.45);
+}
+
+.wg-body {
+  display: grid;
+  gap: 8px;
+}
+
+.wg-body label {
+  color: var(--text-2);
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.wg-body input,
+.wg-body textarea {
+  width: 100%;
+  background: var(--bg-1);
+  color: var(--text-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: var(--sans);
+}
+
+.wg-body textarea {
+  font-family: var(--mono);
+  resize: vertical;
+}
+
+.wg-row {
+  display: flex;
+  gap: 8px;
+}
+
+.wg-primary,
+.wg-ghost {
+  margin-top: 10px;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 600;
+  font-size: 14px;
+  border: 1px solid transparent;
+}
+
+.wg-primary {
+  background: var(--gradient);
+  color: #fff;
+}
+
+.wg-ghost {
+  background: transparent;
+  color: var(--text-2);
+  border-color: var(--border);
+}
+
+.wg-error {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--red);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.08);
+  padding: 10px;
+  border-radius: 8px;
+}
