@@ -534,18 +534,51 @@ story += [
     sp(10),
     p("""Standard PBFT has O(n²) message complexity — as the validator set grows, the
 communication overhead grows quadratically, making it impractical beyond ~100 nodes.
-S-BFT solves this by partitioning the validator set into independent committees."""),
+S-BFT solves this by electing a small <b>quorum</b> of K nodes per inference request,
+rather than involving the full validator set."""),
     sp(8),
-    p("""Each committee runs a complete, independent QoI consensus instance in parallel.
-Different inference requests are routed to different committees. Throughput scales
-linearly with the number of committees while each committee maintains full BFT
-safety guarantees (tolerating f Byzantine nodes within the committee)."""),
+    p("<b>The scaling problem</b>", h3),
+    p("""With N DNN nodes in the network, running QoI across all of them for every inference
+request is unscalable: O(N²) message complexity, latency that tracks the slowest node,
+and most nodes having no familiarity with the requested model or dataset. S-BFT reduces
+the active committee to K = 10 nodes (configurable), achieving O(K²) message complexity
+independent of total network size."""),
     sp(8),
-    p("""Cross-committee coordination is minimal: a lightweight inter-committee finalisation
-layer aggregates committee results and writes them to the main chain. The sharding
-scheme is deterministic — committee assignment for a given inference request is
-derived from the request hash, making routing verifiable and unpredictable by
-adversaries."""),
+    p("<b>Per-request quorum selection</b>", h3),
+    p("""For each inference request, a quorum is elected as follows:"""),
+    p("1.  Filter eligible DNN validators by model name and dataset ID matching the request.", bullet),
+    p("2.  Compute seed = SHA-256(block_hash || request_id) — unique per round, reproducible by any node.", bullet),
+    p("3.  Sample K nodes from the filtered pool using the seed — without replacement, deterministically.", bullet),
+    p("4.  Sort selected nodes by node_id for canonical ordering.", bullet),
+    sp(6),
+    p("""Quorum assignment is verifiable by any network participant and unpredictable before
+the inference request arrives — preventing adversaries from pre-positioning nodes."""),
+    sp(8),
+    p("<b>Quorum parameters</b>", h3),
+]
+story.append(stat_table([
+    ("Target quorum size",  "10 nodes (ideal)"),
+    ("Floor",               "4 nodes minimum — gives f=1 (requires 3f+1)"),
+    ("Ceiling",             "19 nodes maximum — gives f=6"),
+    ("Fallback",            "If filtered pool < 4 nodes, all eligible DNN validators participate"),
+]))
+story += [
+    sp(8),
+    p("<b>Local BFT parameters</b>", h3),
+    p("""Each quorum operates with its own fault-tolerance parameters, independent of the
+global chain f:"""),
+    p("f = (K - 1) // 3", mono),
+    p("threshold = 2f + 1", mono),
+    p("""For K=10: f=3, threshold=7. For K=4: f=1, threshold=3.
+Nodes not elected to the quorum stand by for one block slot — they do not participate
+and do not interfere. The committed QoI block arrives via P2P gossip and is ingested
+normally by all nodes."""),
+    sp(8),
+    p("<b>Quorum integrity at commit</b>", h3),
+    p("""When a QoI block is sealed, the protocol validates that every commit signature
+originated from a node in the elected quorum. Signatures from outside the quorum are
+stripped — those nodes receive no reward. The elected quorum node IDs are embedded in
+the ConsensusOutcome and written to chain in the CONSENSUS_RESULT transaction."""),
     sp(16),
 ]
 
@@ -624,29 +657,33 @@ as working Python/React code."""),
 
 built = [
     ("Blockchain Core",
-     "Full chain with QoI and PoS block types, Merkle root computation, SHA-256 block hashing, chain validation, genesis block with 10M INFER allocation, SQLite-backed persistent storage."),
+     "Full chain with QoI and PoS block types, Merkle root computation, SHA-256 block hashing, chain validation, genesis block with 10M INFER allocation. SQLite-backed persistent storage on by default (data/chain.db, WAL mode)."),
     ("State Machine",
-     "ChainState tracks balances, stakes, reputations, registered nodes (DNN & PoS), PoM states, inference log, and smart contract state. All reads are authoritative from chain, no off-chain registries."),
+     "ChainState tracks balances, stakes, reputations, registered nodes (DNN & PoS), PoM states, inference log, smart contract state, and a public key registry (pubkeys) for wallet signature verification. All reads are authoritative from chain, no off-chain registries."),
+    ("S-BFT Quorum Selection",
+     "Per-request deterministic quorum election (core/consensus/quorum.py). Seed = SHA-256(block_hash + request_id). Filters eligible DNN nodes by model/dataset, samples K=10 nodes, computes quorum-local f=(K-1)//3. Non-quorum nodes stand by. Quorum integrity enforced at commit — out-of-quorum signatures stripped."),
     ("QoI Consensus Engine",
-     "Full 3-phase PBFT-derived consensus (PRE-PREPARE → PREPARE → COMMIT). View-change protocol for primary failure recovery. Timeout manager. Message scheduler. Async state machine."),
+     "Full 3-phase PBFT-derived consensus (PRE-PREPARE \u2192 PREPARE \u2192 COMMIT). View-change protocol for primary failure recovery. Timeout manager. Message scheduler. Async state machine. QoI state machine initialised with quorum-local f."),
     ("PoS Consensus",
-     "Parallel PoS consensus for simple transaction blocks. Stake × reputation weighted proposer election. 2f+1 vote threshold. Auto-commits in single-node dev mode."),
+     "Parallel PoS consensus for simple transaction blocks. Stake \u00d7 reputation weighted proposer election. 2f+1 vote threshold. Auto-commits in single-node dev mode."),
     ("Proof of Model (PoM)",
      "Full admission protocol: challenge generation (deterministic seed), response verification against CIFAR-10 ground truth, tally logic, NODE_ADMITTED / NODE_REJECTED system transactions."),
+    ("Wallet & Signature Verification",
+     "secp256k1 BIP39 wallet (12-word mnemonic, AES-256-GCM encrypted). Private key never stored in plaintext. Transactions include sender public key; backend registers it in ChainState.pubkeys on first confirmed tx. Subsequent txs verified using the registry. Signature: ECDSA(SHA-256(tx_id), privkey)."),
     ("P2P Gossip Layer",
      "WebSocket-based peer-to-peer network. Message types: CONSENSUS, TRANSACTION, BLOCK, PEER_DISCOVERY. Persistent connections with reconnect logic. Image fetch protocol for inference requests."),
     ("REST API (FastAPI)",
-     "40+ endpoints across /chain, /state, /tx, /p2p, /dashboard, /ws namespaces. Full OpenAPI docs at /docs. WebSocket streams for live consensus events."),
+     "40+ endpoints across /chain, /state, /tx, /p2p, /dashboard, /ws namespaces. Full OpenAPI docs at /docs. WebSocket streams for live consensus events. Faucet endpoint for testnet token distribution."),
     ("Model Registry",
-     "Local off-chain model staging with SQLite backend. Upload → validate → approve pipeline. ModelValidator runs size, loadability, and latency benchmarks. SHA-256 weights commitment."),
+     "7 CIFAR-10 CNN architectures (ResNet, VGG, DenseNet, WideResNet, MobileNetV2, PreActResNet, PyramidNet). ModelRegistry with SHA-256 weights commitment. Training scripts included."),
     ("Cryptographic Identity",
-     "Ed25519 key generation, transaction signing, signature verification. Node identity persisted to JSON keyfiles. Hex-encoded public keys committed on-chain."),
+     "secp256k1 keys (ecdsa lib on backend, @noble/secp256k1 on frontend). Node identity persisted to JSON keyfiles. Address = SHA-256(pubkey_bytes)[:20] as 40-char hex — identical derivation in Python and JavaScript."),
     ("Frontend Dashboard",
-     "React SPA with 6 pages: Landing (live stats, canvas particles, circuit hero), Chain Explorer (search, block detail, tx panel, charts), Validators (reputation leaderboard), Inference (submit + consensus monitor), Network (P2P topology, live event stream), Become a Node (4-step DNN registration wizard)."),
+     "React SPA with 7 pages: Home (live stats, canvas particles, circuit hero), Explorer (clickable blocks/txs/addresses, address history), Validators, Inference, Network, Become a Node (DNN registration wizard), Whitepaper. Full wallet panel: create, backup, recover, import, lock/unlock, send, stake/unstake."),
     ("Vercel Deployment",
-     "Production build configured for Vercel with vercel.json. .env.production sets relative API URLs for same-origin serving. Deployed at inferencechain.vercel.app (or equivalent)."),
+     "Production build configured for Vercel with vercel.json. .env.production sets relative API URLs for same-origin serving."),
     ("Test Suite",
-     "Unit and integration tests covering chain state transitions, QoI consensus rounds, PoM flow, P2P image fetch, dashboard API, and transaction serialisation."),
+     "Unit and integration tests covering chain state transitions, QoI consensus rounds, PoM flow, P2P image fetch, dashboard API, transaction serialisation, and wallet pubkey registry."),
 ]
 
 for component, description in built:
@@ -752,19 +789,22 @@ phase1 = [
     ("✓", "PoQI on-chain reputation system"),
     ("✓", "Proof of Model admission protocol"),
     ("✓", "PoS consensus for simple transactions"),
+    ("✓", "S-BFT per-request quorum selection (K=10, deterministic seed)"),
+    ("✓", "secp256k1 wallet — BIP39 mnemonic, AES-256-GCM encryption, send/stake"),
+    ("✓", "On-chain public key registry + wallet signature verification"),
     ("✓", "P2P gossip layer with WebSocket connections"),
-    ("✓", "Full REST + WebSocket API"),
-    ("✓", "Live web dashboard (React, 6 pages)"),
+    ("✓", "Full REST + WebSocket API (40+ endpoints)"),
+    ("✓", "Live web dashboard (React, 7 pages, chain explorer, wallet panel)"),
     ("✓", "DNN validator registration wizard"),
-    ("✓", "SQLite-backed persistent chain storage"),
-    ("✓", "Ed25519 cryptographic identity"),
+    ("✓", "SQLite-backed persistent chain storage (on by default)"),
+    ("✓", "secp256k1 cryptographic identity (Python + JavaScript)"),
 ]
 for status, item in phase1:
     story.append(p(f"<font color='#10b981'>{status}</font>  {item}", bullet))
 
 story += [sp(10), p("<b>Phase 2 — Scaling & Security (Q3 2026)</b>", h3)]
 phase2 = [
-    ("◎", "S-BFT sharding — partition validator set into parallel committees"),
+    ("◎", "S-BFT OOD layer — VAE-based Likelihood Regret scoring to prefer domain-familiar nodes in quorum selection"),
     ("◎", "Signature aggregation — BLS multi-signatures to reduce COMMIT message size"),
     ("◎", "Peer discovery — full Kademlia DHT for automatic peer finding"),
     ("◎", "Multi-model support — validators serve multiple DNN architectures"),

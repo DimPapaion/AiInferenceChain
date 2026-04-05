@@ -49,6 +49,13 @@ SUPPORTED_DATASETS    = {"cifar10"}   # expandable in future
 NODE_TYPE_DNN = "dnn"
 NODE_TYPE_POS = "pos"
 
+# ── S-BFT Quorum (per-request DNN committee) ─────────────────────────────────
+# A subset of eligible DNN nodes is elected per inference request.
+# Full network does NOT participate — only the quorum does.
+QUORUM_TARGET   = 10    # ideal quorum size
+QUORUM_FLOOR    = 4     # minimum (gives f=1); below this → fallback to all eligible
+QUORUM_CEILING  = 19    # maximum (gives f=6)
+
 # ── Mempool ───────────────────────────────────────────────────────────────────
 MEMPOOL_MAX_SIZE    = 10_000           # max pending transactions
 

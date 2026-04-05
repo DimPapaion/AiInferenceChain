@@ -62,13 +62,16 @@ class ConsensusOutcome:
     Produced when a round reaches COMMITTED.
     Contains everything needed to build the QoI block.
     """
-    request_id:       str
-    consensus_class:  int
-    view:             int
-    seq:              int
-    primary_id:       str
-    round_result:     RoundResult          # QoI scores, rewards, rep deltas
-    commit_signatures: list[tuple[str, str]]  # (node_id, signature)
+    request_id:        str
+    consensus_class:   int
+    view:              int
+    seq:               int
+    primary_id:        str
+    round_result:      RoundResult              # QoI scores, rewards, rep deltas
+    commit_signatures: list[tuple[str, str]]    # (node_id, signature)
+    elected_quorum:    frozenset[str] = field(  # node_ids elected by S-BFT quorum
+        default_factory=frozenset
+    )
 
     def build_system_txs(
         self,
@@ -205,6 +208,14 @@ class QoIStateMachine:
 
     def is_primary(self) -> bool:
         return self.node_id == self.primary_id
+
+    def set_elected_quorum(self, node_ids: frozenset[str]) -> None:
+        """
+        Register the S-BFT elected quorum for this round.
+        Called by ConsensusEngine after quorum selection.
+        Stored and attached to ConsensusOutcome when the round finalises.
+        """
+        self._elected_quorum: frozenset[str] = node_ids
 
     def start_round(
         self,
@@ -460,6 +471,7 @@ class QoIStateMachine:
             primary_id        = self.primary_id,
             round_result      = round_result,
             commit_signatures = commit_sigs,
+            elected_quorum    = getattr(self, "_elected_quorum", frozenset()),
         )
         self.phase = QoIPhase.COMMITTED
 

@@ -56,6 +56,7 @@ from core.blockchain.constants import (
 from core.blockchain.transaction import Transaction, TxType
 from core.blockchain.utils import compute_merkle_root, now
 from core.consensus.block_builder import build_pos_block, build_qoi_block
+from core.consensus.quorum import select_quorum, Quorum
 from core.qoi.messages import (
     MsgType as QoIMsgType, BaseMessage, PrePrepareMsg,
     PrepareMsg, CommitMsg, ViewChangeMsg, NewViewMsg,
@@ -101,6 +102,9 @@ class ConsensusEngine:
 
         # Pending inference tx for current QoI round
         self._pending_inference_tx: Optional[Transaction] = None
+
+        # Elected S-BFT quorum for the current QoI round
+        self._active_quorum: Optional[Quorum] = None
 
         self._running = False
         self._p2p: Optional[object] = None   # P2PServer, set via attach_p2p()
@@ -295,7 +299,17 @@ class ConsensusEngine:
     # ══════════════════════════════════════════════════════════════════════════
 
     async def _run_qoi_round(self, inference_tx: Transaction) -> None:
-        """One full QoI consensus round (PRE_PREPARE → PREPARE → COMMIT)."""
+        """
+        One full S-BFT QoI consensus round (PRE_PREPARE → PREPARE → COMMIT).
+
+        S-BFT layer:
+          1. Elect a quorum of K nodes from eligible DNN validators, filtered
+             by model/dataset. Quorum is deterministic: any node can verify it.
+          2. If this node is NOT in the elected quorum — stand by for one slot.
+             The committed QoI block will arrive via P2P.
+          3. If this node IS in the quorum — run inference and participate in
+             the PBFT-style QoI round using quorum-local f (not the global f).
+        """
         chain = self.svc.chain
         state = chain.state
         tip   = chain.tip
@@ -305,8 +319,52 @@ class ConsensusEngine:
             await asyncio.sleep(BLOCK_TIME_TARGET)
             return
 
+        # ── S-BFT: elect quorum for this request ─────────────────────────────
+        request_id = inference_tx.payload.request_id
+        image_hash = inference_tx.payload.image_hash
+        model_hint = inference_tx.payload.model_hint   # "any" or specific model name
+        dataset_id = getattr(inference_tx.payload, "dataset_id", None)
+
+        quorum = select_quorum(
+            request_id = request_id,
+            block_hash = tip.hash,
+            eligible   = dnn_nodes,
+            model_name = None if model_hint == "any" else model_hint,
+            dataset_id = dataset_id,
+        )
+
+        if quorum is None:
+            # Not enough eligible nodes — fall back: use all DNN validators
+            log.warning(
+                "QoI quorum: too few eligible DNN nodes (%d) for request %s… — using all",
+                len(dnn_nodes), request_id[:12],
+            )
+            quorum_nodes  = dnn_nodes
+            quorum_f_val  = self.f
+        else:
+            quorum_nodes  = list(quorum.nodes)
+            quorum_f_val  = quorum.f
+            log.info(
+                "QoI quorum elected: size=%d f=%d threshold=%d seed=%s… request=%s…",
+                quorum.quorum_size, quorum.f, quorum.threshold,
+                quorum.seed[:12], request_id[:12],
+            )
+
+        self._active_quorum = quorum
+
+        # ── S-BFT membership check — skip if not in quorum ───────────────────
+        quorum_ids = {n.node_id for n in quorum_nodes}
+        if self.node_id not in quorum_ids:
+            log.debug(
+                "Not in QoI quorum for request %s… — standing by",
+                request_id[:12],
+            )
+            await asyncio.sleep(BLOCK_TIME_TARGET)
+            return
+
+        # ── Select primary from quorum members only ───────────────────────────
         primary_id = select_proposer(
-            nodes           = dnn_nodes,
+            nodes           = quorum_nodes,
             stakes          = dict(state.stakes),
             reputations     = dict(state.reputations),
             prev_block_hash = tip.hash,
@@ -316,24 +374,27 @@ class ConsensusEngine:
             await asyncio.sleep(BLOCK_TIME_TARGET)
             return
 
-        # Pop the inference tx from the queue
+        # Pop the inference tx — this node is participating
         self.svc.mempool.next_inference()
         self._pending_inference_tx = inference_tx
         self._round_seq += 1
 
-        log.debug("QoI round seq=%d primary=%s…", self._round_seq, primary_id[:8])
+        log.debug(
+            "QoI round seq=%d primary=%s… quorum_f=%d",
+            self._round_seq, primary_id[:8], quorum_f_val,
+        )
 
         # Run inference on this node
-        image_hash = inference_tx.payload.image_hash
-        request_id = inference_tx.payload.request_id
-        own_probs  = await self._run_inference(image_hash)
+        own_probs = await self._run_inference(image_hash)
 
-        # Initialise QoI state machine
+        # Initialise QoI state machine with quorum-local f
         self._qoi_sm = QoIStateMachine(
             node_id    = self.node_id,
             primary_id = primary_id,
-            f          = self.f,
+            f          = quorum_f_val,
         )
+        # Register elected quorum so it's embedded in ConsensusOutcome
+        self._qoi_sm.set_elected_quorum(frozenset(quorum_ids))
         self._round_start = now()
 
         pre_prepare = self._qoi_sm.start_round(
@@ -429,6 +490,29 @@ class ConsensusEngine:
 
     async def _commit_qoi_block(self, outcome: ConsensusOutcome) -> None:
         """Seal a QoI block into the chain."""
+        # ── S-BFT quorum validation ───────────────────────────────────────────
+        # Verify that every node that committed was actually in the elected quorum.
+        # Any node outside the quorum has no authority to commit for this round.
+        if outcome.elected_quorum:
+            outsiders = [
+                node_id
+                for node_id, _ in outcome.commit_signatures
+                if node_id not in outcome.elected_quorum
+            ]
+            if outsiders:
+                log.warning(
+                    "QoI commit contains %d node(s) outside elected quorum — "
+                    "stripping: %s",
+                    len(outsiders),
+                    [n[:8] + "…" for n in outsiders],
+                )
+                # Strip their signatures — do not reward them
+                outcome.commit_signatures = [
+                    (nid, sig)
+                    for nid, sig in outcome.commit_signatures
+                    if nid in outcome.elected_quorum
+                ]
+
         chain     = self.svc.chain
         nonces    = {a: chain.state.nonce_of(a) for a in chain.state.nonces}
         simple_txs = self.svc.mempool.select_simple(nonces, MAX_SIMPLE_TXS)
@@ -452,8 +536,10 @@ class ConsensusEngine:
             }
             chain.apply_reputation_deltas(rep_deltas)
             log.info(
-                "QoI block committed height=%d class=%d hash=%s…",
-                block.height, outcome.consensus_class, block.hash[:12],
+                "QoI block committed height=%d class=%d quorum=%d hash=%s…",
+                block.height, outcome.consensus_class,
+                len(outcome.elected_quorum) if outcome.elected_quorum else -1,
+                block.hash[:12],
             )
             if self._p2p:
                 await self._p2p.broadcast_block(block.to_dict())
