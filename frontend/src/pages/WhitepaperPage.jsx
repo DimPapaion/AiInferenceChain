@@ -71,6 +71,42 @@ with committee count. Committee assignment is deterministic and verifiable.`,
       { label: 'Routing', value: 'SHA-256(request) deterministic' },
     ],
   },
+  {
+    id: 'ood',
+    icon: '◉',
+    color: 'orange',
+    label: 'OOD-Biased Quorum',
+    title: 'Knowledge Self-Assessment (KSA)',
+    subtitle: 'Quorum biased toward the most domain-familiar validators',
+    body: `Every admitted DNN node auto-calibrates an Out-of-Distribution scorer the
+moment its NODE_ADMITTED transaction is committed. At inference time, validators are
+ranked by their OOD score for the specific input image. A top-2K shortlist of the
+most in-distribution nodes is built; K are then sampled deterministically. BFT
+determinism is fully preserved — any peer can reproduce the quorum.`,
+    stats: [
+      { label: 'Primary scorer', value: 'Mahalanobis (penultimate features)' },
+      { label: 'Fallback scorer', value: 'Energy (free-energy of logits)' },
+      { label: 'Shortlist size', value: 'top-2K eligible nodes' },
+    ],
+  },
+  {
+    id: 'llm',
+    icon: '✦',
+    color: 'purple',
+    label: 'LLM Orchestration',
+    title: 'LLM Orchestration Layer',
+    subtitle: 'Optional AI coordination above the consensus layer',
+    body: `An opt-in InferenceOrchestrator sits above the blockchain and provides four
+high-level coordination endpoints: intelligent request routing, validator anomaly
+detection, multi-task decomposition, and natural-language chain Q&A. It supports
+OpenAI, local Ollama, and a deterministic mock provider. The consensus layer remains
+fully deterministic regardless of LLM availability.`,
+    stats: [
+      { label: 'Providers', value: 'OpenAI / Ollama / Mock' },
+      { label: 'Endpoints', value: '/llm/route · /llm/analyse · /llm/decompose · /llm/explain' },
+      { label: 'Consensus impact', value: 'None — read-only' },
+    ],
+  },
 ];
 
 const TOKEN_STATS = [
@@ -191,7 +227,7 @@ export default function WhitepaperPage({ navigate }) {
         }}>
           <div className="wp-eyebrow">
             <span className="wp-eyebrow-dot" />
-            Technical Whitepaper · v0.1
+            Technical Whitepaper · v0.5
           </div>
 
           <div className="wp-hero-logo">⬡</div>

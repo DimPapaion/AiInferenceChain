@@ -180,6 +180,7 @@
 .wp-card-blue   { border-top: 3px solid var(--blue); }
 .wp-card-cyan   { border-top: 3px solid var(--cyan); }
 .wp-card-green  { border-top: 3px solid var(--green); }
+.wp-card-orange { border-top: 3px solid var(--orange); }
 
 .wp-card-header { display: flex; gap: 16px; align-items: flex-start; }
 .wp-card-icon {
@@ -189,6 +190,7 @@
 .wp-icon-blue   { color: var(--blue); }
 .wp-icon-cyan   { color: var(--cyan); }
 .wp-icon-green  { color: var(--green); }
+.wp-icon-orange { color: var(--orange); }
 
 .wp-card-label {
   font-size: 10px; font-weight: 700;
@@ -220,6 +222,7 @@
 .wp-val-blue   { color: var(--blue); }
 .wp-val-cyan   { color: var(--cyan); }
 .wp-val-green  { color: var(--green); }
+.wp-val-orange { color: var(--orange); }
 
 /* ── Flow section ─────────────────────────────────────────────────────────── */
 .wp-flow {

@@ -302,6 +302,7 @@
 .inn-card-purple::before { background: var(--purple); }
 .inn-card-blue::before   { background: var(--blue); }
 .inn-card-cyan::before   { background: var(--cyan); }
+.inn-card-green::before  { background: var(--green); }
 
 .inn-card:hover {
   transform: translateY(-4px);
@@ -315,6 +316,7 @@
 .inn-card-purple .inn-icon { color: var(--purple-light); }
 .inn-card-blue .inn-icon   { color: var(--blue); }
 .inn-card-cyan .inn-icon   { color: var(--cyan); }
+.inn-card-green .inn-icon  { color: var(--green); }
 
 .inn-header h3 {
   font-size: 18px;

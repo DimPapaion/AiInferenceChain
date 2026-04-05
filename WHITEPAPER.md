@@ -1,5 +1,5 @@
 # InferenceChain: A Decentralized AI Inference Network
-### Technical Whitepaper — v0.4 (April 2026)
+### Technical Whitepaper — v0.5 (April 2026)
 
 ---
 
@@ -221,13 +221,74 @@ Nodes not elected to the quorum for a given round stand by for one block slot an
 
 When `_commit_qoi_block` executes, it validates that every commit signature came from a node that was in the elected quorum. Signatures from outside the quorum are stripped — those nodes receive no reward and their response is ignored.
 
-### 6.7 Future: OOD-Based Quorum Scoring
+### 6.7 OOD-Biased Quorum Selection (Knowledge Self-Assessment)
 
-The current implementation uses random hash-based quorum selection. The research paper describes a more sophisticated mechanism: **Likelihood Regret** computed by a Variational Autoencoder (VAE) to measure out-of-distribution (OOD) score for each node with respect to the input image's domain. Nodes with lower OOD scores (more familiar with the input domain) would be preferred in quorum selection. This layer is not yet implemented and represents the next research contribution to be coded.
+Every admitted DNN node automatically calibrates an **Out-of-Distribution (OOD) scorer** the moment its `NODE_ADMITTED` transaction is committed in a PoS block. The scorer measures how *in-distribution* (familiar) a candidate image is for a given node's model — enabling the quorum to be biased toward validators that are most capable on the specific input domain.
+
+#### Scorer hierarchy
+
+| Scorer | Method | Calibration cost |
+|--------|--------|------------------|
+| `MahalanobisOODScorer` | Class-conditional Gaussian fit on penultimate-layer features | One calibration pass over CIFAR-10 test set |
+| `EnergyOODScorer` | Free-energy of logits: −T · log Σ exp(fᵢ/T) | Zero — uses raw logits |
+| `LikelihoodRegretScorer` | Paper-exact VAE Likelihood Regret | Separate VAE training pass |
+
+At admission time, nodes attempt Mahalanobis calibration first and fall back to the Energy scorer if the CIFAR-10 test set is not available on disk. The calibration runs in a background thread so it never blocks the consensus loop.
+
+#### Biased selection algorithm
+
+```python
+# 1. For each eligible node, query its OOD scorer with the request image
+scores = {node_id: scorer.score(image_tensor) for node_id in eligible}
+
+# 2. Build a top-2K shortlist (lowest score = most in-distribution)
+shortlist = sorted(scores, key=scores.get)[:2 * K]
+
+# 3. Sample K nodes deterministically from the shortlist
+seed    = SHA-256(block_hash + request_id)
+quorum  = random.sample(shortlist, K, seed=seed)
+```
+
+Nodes without a calibrated scorer fall back to the old uniform-random pool, so the feature degrades gracefully on new or partially-admitted networks. BFT determinism is fully preserved: any peer can reproduce the same quorum from public information.
 
 ---
 
-## 7. Wallet & Client Protocol
+## 7. LLM Orchestration Layer
+
+The LLM layer is an **optional, consensus-independent** coordination service. It runs above the blockchain, never participates in QoI consensus or quorum selection, and can be omitted entirely without affecting network safety.
+
+### 7.1 Architecture
+
+```
+client  →  POST /llm/*  →  InferenceOrchestrator  →  LLM Provider
+                                     │
+                          reads chain state (read-only)
+                          never writes transactions
+```
+
+The `InferenceOrchestrator` is initialized at node startup and injected into the FastAPI application as a singleton dependency. If no provider is configured, all `/llm/*` endpoints return HTTP 503.
+
+### 7.2 Provider Configuration
+
+| Flag | Variant | Notes |
+|------|---------|-------|
+| `--llm-provider ollama` | Local Ollama server | Recommended — no API key, fully offline |
+| `--llm-provider openai` | OpenAI API | Requires `OPENAI_API_KEY` or `--openai-key` |
+| `--llm-provider mock` | Deterministic mock | CI / unit tests |
+| *(omitted)* | Disabled | Default — no LLM, no extra dependencies |
+
+### 7.3 Endpoints
+
+| Endpoint | Body | Response |
+|----------|------|----------|
+| `POST /llm/route` | `{"image_description": "..."}` | `{model_hint, dataset_id, reasoning}` |
+| `POST /llm/analyse` | `{}` | `{anomalous_nodes, recommend_pom, summary}` |
+| `POST /llm/decompose` | `{"task_description": "..."}` | `[{sub_task, model_hint, priority}]` |
+| `POST /llm/explain` | `{"question": "..."}` | `{answer, sources}` |
+
+---
+
+## 9. Wallet & Client Protocol
 
 ### 7.1 Key Scheme
 
@@ -263,7 +324,7 @@ Encryption: **AES-256-GCM** with **PBKDF2** key derivation (100,000 iterations, 
 
 ---
 
-## 8. Token Economics
+## 10. Token Economics
 
 | Parameter | Value |
 |-----------|-------|
@@ -278,7 +339,7 @@ Encryption: **AES-256-GCM** with **PBKDF2** key derivation (100,000 iterations, 
 
 ---
 
-## 9. Network Protocol
+## 11. Network Protocol
 
 Nodes communicate over WebSocket (`ws://host:port+1000`). Message types:
 
@@ -293,7 +354,7 @@ Nodes communicate over WebSocket (`ws://host:port+1000`). Message types:
 
 ---
 
-## 10. REST API
+## 12. REST API
 
 Base URL: `http://localhost:8000`
 
@@ -316,6 +377,10 @@ Base URL: `http://localhost:8000`
 | `GET /p2p/peers` | Known peers |
 | `GET /dashboard/validators` | Validator dashboard data |
 | `GET /dashboard/stats` | Network statistics |
+| `POST /llm/route` | *(opt-in)* Recommend model + dataset for an image description |
+| `POST /llm/analyse` | *(opt-in)* Scan validators for anomalies |
+| `POST /llm/decompose` | *(opt-in)* Split a task into parallel sub-requests |
+| `POST /llm/explain` | *(opt-in)* NL Q&A about chain state |
 
 WebSocket streams:
 - `ws://.../ws/consensus-rounds` — live consensus events
@@ -324,7 +389,7 @@ WebSocket streams:
 
 ---
 
-## 11. Running a Node
+## 13. Running a Node
 
 ### Single node (default, persistent)
 
@@ -355,6 +420,30 @@ python node_runner.py \
     --private-key <hex_private_key>
 ```
 
+### DNN node with LLM layer (local Ollama)
+
+```bash
+ollama pull llama3.2
+python node_runner.py \
+    --node-type dnn \
+    --model resnet20 \
+    --weights-dir models/weights \
+    --private-key <hex_private_key> \
+    --llm-provider ollama --llm-model llama3.2
+```
+
+### DNN node with LLM layer (OpenAI)
+
+```bash
+export OPENAI_API_KEY=sk-...
+python node_runner.py \
+    --node-type dnn \
+    --model resnet20 \
+    --weights-dir models/weights \
+    --private-key <hex_private_key> \
+    --llm-provider openai --llm-model gpt-4o-mini
+```
+
 ### In-memory (ephemeral, no persistence)
 
 ```bash
@@ -363,7 +452,7 @@ python node_runner.py --db-path ""
 
 ---
 
-## 12. Current Implementation Status
+## 14. Current Implementation Status
 
 | Component | Status |
 |-----------|--------|
@@ -379,13 +468,17 @@ python node_runner.py --db-path ""
 | React frontend dashboard | ✓ Complete |
 | secp256k1 wallet (BIP39, AES-GCM) | ✓ Complete |
 | CIFAR-10 CNN model suite (7 architectures) | ✓ Complete |
-| S-BFT OOD layer (VAE / Likelihood Regret) | ⏳ Research extension |
+| OOD scoring (Mahalanobis / Energy / LikelihoodRegret) | ✓ Complete |
+| OOD auto-calibration on NODE_ADMITTED | ✓ Complete |
+| OOD-biased quorum selection (top-2K shortlist) | ✓ Complete |
+| LLM orchestration layer (OpenAI / Ollama / Mock) | ✓ Complete |
+| LLM /route /analyse /decompose /explain endpoints | ✓ Complete |
 | Wallet auto-lock (idle timer) | ⏳ Pending |
 | Faucet as real SYSTEM tx | ⏳ Pending |
 
 ---
 
-## 13. References
+## 15. References
 
 1. D. Papaioannou et al., *Quality of Inference: A Protocol for Byzantine-Robust DNN Consensus*, AUTH, 2024.
 2. D. Papaioannou et al., *S-BFT: Scalable Byzantine Fault Tolerance via Per-Request Quorum Selection*, AUTH, 2025.

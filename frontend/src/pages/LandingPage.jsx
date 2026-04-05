@@ -27,6 +27,14 @@ const INNOVATIONS = [
     body: `The validator set is partitioned into independent committees, each running QoI consensus in parallel on separate inference requests. Throughput scales linearly with the number of committees — without sacrificing BFT guarantees.`,
     tags: ['Sharding', 'Parallel Consensus', 'Linear Scalability'],
   },
+  {
+    icon: '◉',
+    color: 'green',
+    title: 'Knowledge Self-Assessment',
+    subtitle: 'OOD-biased quorum selection',
+    body: `Every admitted DNN node auto-calibrates an Out-of-Distribution scorer at admission. Quorums are biased toward validators most familiar with the incoming image domain — improving accuracy while preserving full BFT determinism.`,
+    tags: ['Mahalanobis OOD', 'OOD-Biased Quorum', 'Domain Awareness'],
+  },
 ];
 
 const NODE_CLUSTERS = {
