@@ -1,0 +1,44 @@
+.shell-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.shell-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 42px;
+  padding: 0 20px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+  /* macOS inset leaves room for traffic lights on the left */
+  padding-left: env(titlebar-area-x, 20px);
+  -webkit-app-region: drag;
+  flex-shrink: 0;
+}
+
+.shell-titlebar * { -webkit-app-region: no-drag; }
+
+.shell-wordmark {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-1);
+}
+.shell-wordmark-ic {
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.shell-version {
+  font-size: 11px;
+  color: var(--text-3);
+  letter-spacing: 0.03em;
+}
+
+.shell-content {
+  flex: 1;
+  overflow-y: auto;
+}

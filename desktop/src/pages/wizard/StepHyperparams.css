@@ -1,0 +1,9 @@
+.hp-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 24px;
+}
+
+@media (max-width: 560px) {
+  .hp-grid { grid-template-columns: 1fr; }
+}

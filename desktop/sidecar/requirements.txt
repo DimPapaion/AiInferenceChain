@@ -1,0 +1,10 @@
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+torch>=2.2.0
+torchvision>=0.17.0
+datasets>=2.19.0          # HuggingFace datasets
+Pillow>=10.3.0
+numpy>=1.26.4
+cryptography>=42.0.5      # signing checkpoints
+requests>=2.31.0
+aiofiles>=23.2.1
