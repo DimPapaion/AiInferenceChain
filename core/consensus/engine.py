@@ -292,6 +292,8 @@ class ConsensusEngine:
             # Gossip to peers
             if self._p2p:
                 await self._p2p.broadcast_block(block.to_dict())
+            # Trigger OOD calibration for any newly admitted DNN nodes
+            asyncio.create_task(self._calibrate_admitted_nodes(block))
         else:
             log.warning("PoS block rejected: %s", result["reason"])
 
@@ -629,6 +631,103 @@ class ConsensusEngine:
 
         if self._qoi_sm.outcome:
             await self._commit_qoi_block(self._qoi_sm.outcome)
+
+    # ── OOD calibration ────────────────────────────────────────────────────────
+
+    async def _calibrate_admitted_nodes(self, block) -> None:
+        """
+        After a block is committed, check if any NODE_ADMITTED txs are present.
+        For each newly admitted DNN node, schedule an async OOD calibration pass
+        if this engine has a loaded model and a calibration dataset.
+
+        This runs as a background task so it does NOT block the consensus loop.
+        """
+        admitted_ids = [
+            tx.payload.node_id
+            for tx in block.all_transactions
+            if tx.tx_type == TxType.NODE_ADMITTED
+        ]
+        if not admitted_ids:
+            return
+
+        for node_id in admitted_ids:
+            # Only calibrate for ourselves (we don't have other nodes' models)
+            if node_id != self.node_id:
+                continue
+            if self.model is None:
+                continue
+            if node_id in self._ood_registry:
+                log.debug("OOD profile already registered for %s — skip", node_id[:12])
+                continue
+
+            log.info("OOD calibration starting for admitted node %s…", node_id[:12])
+            try:
+                await asyncio.get_event_loop().run_in_executor(
+                    None, self._run_ood_calibration_sync, node_id,
+                )
+                log.info("OOD calibration complete for %s", node_id[:12])
+            except Exception as exc:
+                log.warning("OOD calibration failed for %s: %s", node_id[:12], exc)
+
+    def _run_ood_calibration_sync(self, node_id: str) -> None:
+        """
+        Synchronous OOD calibration — runs in a thread executor.
+        Builds a MahalanobisOODScorer (primary) or falls back to EnergyOODScorer.
+        Registers the resulting NodeOODProfile in the global registry.
+        """
+        from core.consensus.ood import (
+            MahalanobisOODScorer, EnergyOODScorer, NodeOODProfile,
+        )
+        import torch
+
+        # Get the live model object from ModelHandle
+        torch_model = getattr(self.model, "_model", None)
+        if torch_model is None:
+            # Trigger lazy load
+            try:
+                self.model.load()
+                torch_model = self.model._model
+            except Exception as e:
+                log.warning("Could not load model for OOD calibration: %s", e)
+                return
+
+        dataset_id = getattr(self.model, "dataset_id", "cifar10")
+
+        # Build a calibration DataLoader from the CIFAR-10 test set
+        # (public dataset, deterministic — any node can reproduce this)
+        try:
+            import torchvision
+            import torchvision.transforms as T
+
+            transform = T.Compose([
+                T.ToTensor(),
+                T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+            ])
+            calib_set = torchvision.datasets.CIFAR10(
+                root="./data", train=False, download=False, transform=transform,
+            )
+            calib_loader = torch.utils.data.DataLoader(
+                calib_set, batch_size=64, shuffle=False, num_workers=0,
+            )
+            scorer = MahalanobisOODScorer()
+            scorer.calibrate(torch_model, calib_loader, device="cpu", num_classes=10)
+            scorer_type = "mahalanobis"
+        except Exception as exc:
+            log.warning(
+                "Mahalanobis calibration failed (%s) — falling back to Energy scorer", exc,
+            )
+            scorer = EnergyOODScorer()
+            scorer.attach_model(torch_model, device="cpu")
+            scorer_type = "energy"
+
+        profile = NodeOODProfile(
+            node_id    = node_id,
+            scorer     = scorer,
+            model      = torch_model if scorer_type == "mahalanobis" else None,
+            device     = "cpu",
+            dataset_id = dataset_id,
+        )
+        self._ood_registry.register(profile)
 
     # ── Gossip helper ─────────────────────────────────────────────────────────
 

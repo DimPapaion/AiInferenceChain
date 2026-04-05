@@ -50,6 +50,8 @@ import uvicorn
 from core.api import create_app
 from core.api.node_service import create_node_service, create_persistent_node_service
 from core.consensus.engine import ConsensusEngine
+from core.llm import InferenceOrchestrator
+from core.llm.provider import MockProvider, OllamaProvider, OpenAIProvider
 from core.network.discovery import PeerDiscovery
 from core.network.p2p_server import P2PServer
 from core.node.identity import NodeIdentity
@@ -116,6 +118,21 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--private-key", default=None,
                    help="Hex private key for this node's identity.  "
                         "Used for signing txs (DNN nodes).  Generates fresh key if omitted.")
+    # ── LLM orchestration options ─────────────────────────────────────────────
+    p.add_argument("--llm-provider", default=None,
+                   choices=["openai", "ollama", "mock"],
+                   help="LLM provider for the orchestration layer.  "
+                        "'openai' requires OPENAI_API_KEY env var.  "
+                        "'ollama' uses a local Ollama server (see --ollama-host).  "
+                        "'mock' is deterministic and requires no network (tests/dev).  "
+                        "Omit to disable /llm/* endpoints (503 on every call).")
+    p.add_argument("--llm-model", default=None,
+                   help="Model name for the LLM provider (default: gpt-4o-mini for openai, "
+                        "llama3.2 for ollama).")
+    p.add_argument("--ollama-host", default="http://localhost:11434",
+                   help="Ollama server base URL (default: http://localhost:11434)")
+    p.add_argument("--openai-key", default=None,
+                   help="OpenAI API key (overrides OPENAI_API_KEY env var).")
     return p.parse_args()
 
 
@@ -281,13 +298,34 @@ async def run(args: argparse.Namespace) -> None:
     # ── Wire WebSocket stream to consensus events ─────────────────────────────
     get_stream_manager().wire_to_event_bus()
 
-    # ── FastAPI app ───────────────────────────────────────────────────────────
+    # ── LLM orchestrator (optional) ────────────────────────────────────────────
+    orchestrator = None
+    if args.llm_provider:
+        if args.llm_provider == "openai":
+            import os
+            api_key  = args.openai_key or os.environ.get("OPENAI_API_KEY", "")
+            model    = args.llm_model or "gpt-4o-mini"
+            provider = OpenAIProvider(model=model, api_key=api_key)
+            log.info("LLM provider         : OpenAI  model=%s", model)
+        elif args.llm_provider == "ollama":
+            model    = args.llm_model or "llama3.2"
+            provider = OllamaProvider(model=model, host=args.ollama_host)
+            log.info("LLM provider         : Ollama  host=%s  model=%s", args.ollama_host, model)
+        else:  # mock
+            provider = MockProvider()
+            log.info("LLM provider         : Mock (deterministic)")
+        orchestrator = InferenceOrchestrator(provider=provider)
+    else:
+        log.info("LLM provider         : disabled (omit --llm-provider to keep disabled)")
+
+    # ── FastAPI app ────────────────────────────────────────────────────────
     app = create_app(
         node_service = svc,
         node_id      = node_id,
         endpoint     = endpoint,
         dev_mode     = not args.no_dev,
         image_store  = image_store,
+        orchestrator = orchestrator,
     )
 
     log.info("REST API             : http://localhost:%d/docs", rest_port)
