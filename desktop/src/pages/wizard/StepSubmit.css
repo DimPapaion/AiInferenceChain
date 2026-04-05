@@ -1,3 +1,27 @@
+.submit-chain-status {
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  margin-bottom: 16px;
+  font-weight: 500;
+  border: 1px solid transparent;
+}
+.submit-chain-status.checking {
+  background: var(--bg-3);
+  color: var(--text-3);
+  border-color: var(--border);
+}
+.submit-chain-status.online {
+  background: rgba(16,185,129,0.08);
+  color: var(--green);
+  border-color: rgba(16,185,129,0.25);
+}
+.submit-chain-status.offline {
+  background: rgba(245,158,11,0.08);
+  color: var(--orange);
+  border-color: rgba(245,158,11,0.25);
+}
+
 .submit-metrics {
   display: flex;
   flex-wrap: wrap;

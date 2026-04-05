@@ -6,7 +6,7 @@ import json
 import time
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -99,3 +99,56 @@ def _sha256_file(path: str) -> str:
         for chunk in iter(lambda: f.read(65536), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+@router.get("/status")
+def chain_status(endpoint: str = Query(default="http://localhost:8000")):
+    """
+    Check whether the InferenceChain node endpoint is reachable.
+    Used by the UI to decide whether to show 'Submit' or 'Save for later'.
+    """
+    import requests as http_requests
+    try:
+        resp = http_requests.get(f"{endpoint}/health", timeout=5)
+        reachable = resp.status_code == 200
+    except Exception:
+        reachable = False
+    return {"reachable": reachable, "endpoint": endpoint}
+
+
+@router.post("/save-manifest")
+def save_manifest(req: SubmitRequest):
+    """
+    Save a signed manifest to disk (userData dir) so it can be submitted
+    later when the chain is online.
+    """
+    import os
+    save_dir = Path(os.environ.get("IC_DATA_DIR", Path.home() / ".inferencechain")) / "pending_submissions"
+    save_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"manifest_{int(time.time())}.json"
+    payload = {
+        "manifest": req.manifest,
+        "signature_hex": req.signature_hex,
+        "node_public_key_hex": req.node_public_key_hex,
+        "network_endpoint": req.network_endpoint,
+        "saved_at": int(time.time()),
+    }
+    (save_dir / filename).write_text(json.dumps(payload, indent=2))
+    return {"ok": True, "path": str(save_dir / filename)}
+
+
+@router.get("/pending-submissions")
+def list_pending():
+    """List all locally saved manifests waiting to be submitted."""
+    import os
+    save_dir = Path(os.environ.get("IC_DATA_DIR", Path.home() / ".inferencechain")) / "pending_submissions"
+    if not save_dir.exists():
+        return {"items": []}
+    items = []
+    for f in sorted(save_dir.glob("manifest_*.json")):
+        try:
+            data = json.loads(f.read_text())
+            items.append({"filename": f.name, "path": str(f), **data})
+        except Exception:
+            pass
+    return {"items": items}
