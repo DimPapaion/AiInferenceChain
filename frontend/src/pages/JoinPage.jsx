@@ -2,6 +2,73 @@ import React, { useState, useRef } from 'react';
 import './JoinPage.css';
 import { uploadModel } from '../api/client';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PUBLIC DOWNLOAD URL — point this at GitHub Releases / CDN when builds exist
+// ─────────────────────────────────────────────────────────────────────────────
+const RELEASES_URL = 'https://github.com/DimPapaion/AiInferenceChain/releases/latest';
+
+const HOW_IT_WORKS = [
+  {
+    n: '01',
+    icon: '↓',
+    title: 'Download & install the app',
+    body: 'A single installer (Windows .exe, macOS .dmg, Linux .AppImage). No Python or CUDA installation needed — everything is bundled.',
+  },
+  {
+    n: '02',
+    icon: '◈',
+    title: 'Upload an architecture and train',
+    body: 'Supply a PyTorch nn.Module file and a dataset URL. Configure optimizer, learning rate, augmentation, and loss from the hyperparameter panel — no code needed.',
+  },
+  {
+    n: '03',
+    icon: '⬡',
+    title: 'Sign the checkpoint and join',
+    body: 'Once training is done, sign the training manifest with your node key and submit it to the network. Validators issue inference challenges; on pass, your node goes live.',
+  },
+];
+
+const APP_FEATURES = [
+  {
+    icon: '◫',
+    title: 'Architecture validator',
+    body: 'Upload any architecture.py. The app performs an AST safety scan then runs a dry forward pass to verify output shape before any training starts.',
+  },
+  {
+    icon: '⌁',
+    title: 'Dataset connector',
+    body: 'Point to any HuggingFace dataset name or a direct .zip / .tar.gz archive with ImageFolder layout. Auto-detection, class preview, sample counts.',
+  },
+  {
+    icon: '▦',
+    title: 'Hyperparameter panel',
+    body: 'Optimizer (Adam / AdamW / SGD), learning rate, scheduler, batch size, weight decay, augmentation presets, and loss function — all from a clean UI.',
+  },
+  {
+    icon: '◌',
+    title: 'Live training dashboard',
+    body: 'Watch loss and accuracy curves update in real time as epochs complete. Training runs locally on your GPU (CPU fallback). Checkpoints saved every 5 epochs.',
+  },
+  {
+    icon: '✦',
+    title: 'Signed manifest submission',
+    body: 'Training results are hashed and signed with your Ed25519 node key. The manifest is submitted to the chain for validator QoI challenges.',
+  },
+  {
+    icon: '◇',
+    title: 'Node & wallet dashboard',
+    body: 'After registration, monitor your node status, challenge results, training history, network peers, and on-chain identity from the persistent dashboard.',
+  },
+];
+
+const SYSREQS = [
+  { label: 'OS',     value: 'Windows 10/11 · macOS 13+ · Ubuntu 22.04+' },
+  { label: 'RAM',    value: '8 GB minimum, 16 GB recommended' },
+  { label: 'GPU',    value: 'Optional but strongly recommended — NVIDIA CUDA 11.8+, AMD ROCm 6+ (CPU fallback available)' },
+  { label: 'Disk',   value: '4 GB free for app + model checkpoints' },
+  { label: 'Python', value: 'Bundled — no separate installation needed' },
+];
+
 const STEPS = ['Identity', 'Model File', 'Architecture', 'Validate & Register'];
 
 const DATASETS = [
@@ -414,8 +481,8 @@ function StepValidate({ identity, model, arch, result, setResult, onRegister, re
   );
 }
 
-// ── Main ──────────────────────────────────────────────────────────────────────
-export default function JoinPage({ navigate }) {
+// ── Advanced manual registration form (unchanged, hidden by default) ──────────
+function AdvancedRegistrationForm({ navigate }) {
   const [step, setStep] = useState(0);
 
   // Form state split by section
@@ -598,6 +665,124 @@ export default function JoinPage({ navigate }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+export default function JoinPage({ navigate }) {
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  return (
+    <div className="jp-root">
+      {/* ── Hero ── */}
+      <section className="jp-hero page-wrap">
+        <div className="jp-hero-shell">
+          <div className="jp-hero-kicker">Run a Node</div>
+          <h1 className="jp-hero-title">
+            Become a DNN Inference Node
+          </h1>
+          <p className="jp-hero-sub">
+            Download the InferenceChain desktop app, train a model through a guided
+            wizard, and submit your node to the network — no command line required.
+          </p>
+          <div className="jp-hero-actions">
+            <a
+              className="btn btn-primary btn-lg jp-download-btn"
+              href={RELEASES_URL}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <span className="jp-dl-icon">↓</span>
+              Download for Windows
+              <span className="jp-dl-sub">.exe installer · v0.1 preview</span>
+            </a>
+            <div className="jp-other-os">
+              <a href={RELEASES_URL} target="_blank" rel="noreferrer" className="jp-os-link">macOS</a>
+              <span className="jp-os-sep">·</span>
+              <a href={RELEASES_URL} target="_blank" rel="noreferrer" className="jp-os-link">Linux</a>
+              <span className="jp-os-sep jp-os-note">— coming soon</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── How it works ── */}
+      <section className="jp-section page-wrap">
+        <div className="jp-section-head">
+          <p className="section-title">How it works</p>
+          <h2>From download to active node in three steps</h2>
+        </div>
+        <div className="jp-how-grid">
+          {HOW_IT_WORKS.map((step) => (
+            <div key={step.n} className="jp-how-card">
+              <div className="jp-how-num">{step.n}</div>
+              <div className="jp-how-icon">{step.icon}</div>
+              <h3 className="jp-how-title">{step.title}</h3>
+              <p className="jp-how-body">{step.body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── App features ── */}
+      <section className="jp-section jp-section-alt">
+        <div className="page-wrap">
+          <div className="jp-section-head">
+            <p className="section-title">What's in the app</p>
+            <h2>Everything handled for you — no ML engineering required</h2>
+            <p className="jp-section-sub">
+              The desktop app bundles a fully sandboxed Python training backend.
+              You supply the architecture and dataset; the app takes care of the rest.
+            </p>
+          </div>
+          <div className="jp-feat-grid">
+            {APP_FEATURES.map((f) => (
+              <div key={f.title} className="jp-feat-card card">
+                <div className="jp-feat-icon">{f.icon}</div>
+                <h3 className="jp-feat-title">{f.title}</h3>
+                <p className="jp-feat-body">{f.body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── System requirements ── */}
+      <section className="jp-section page-wrap">
+        <div className="jp-section-head">
+          <p className="section-title">System requirements</p>
+          <h2>What you need to run a node</h2>
+        </div>
+        <div className="jp-sysreq card">
+          {SYSREQS.map((r) => (
+            <div key={r.label} className="jp-sysreq-row">
+              <span className="jp-sysreq-label">{r.label}</span>
+              <span className="jp-sysreq-val">{r.value}</span>
+            </div>
+          ))}
+        </div>
+        <div className="jp-sysreq-note">
+          Training runs entirely offline on your machine. Only the signed manifest
+          (metadata + checkpoint hash, no raw weights) is ever sent to the network.
+        </div>
+      </section>
+
+      {/* ── Advanced: manual registration ── */}
+      <section className="jp-section page-wrap">
+        <button
+          className="jp-advanced-toggle"
+          onClick={() => setAdvancedOpen((o) => !o)}
+        >
+          <span>Advanced: manual node registration</span>
+          <span className="jp-adv-caret">{advancedOpen ? '▴' : '▾'}</span>
+        </button>
+        <p className="jp-advanced-hint">
+          Already have a trained checkpoint and want to register directly via the
+          chain API — without using the desktop app?
+        </p>
+        {advancedOpen && <AdvancedRegistrationForm navigate={navigate} />}
+      </section>
     </div>
   );
 }

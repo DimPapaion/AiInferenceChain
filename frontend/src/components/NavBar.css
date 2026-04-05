@@ -238,6 +238,24 @@
   50% { opacity: 0.4; }
 }
 
+.nav-download-btn {
+  font-size: 13px;
+  font-weight: 700;
+  padding: 7px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--purple);
+  color: #fff !important;
+  text-decoration: none;
+  transition: background var(--transition), box-shadow var(--transition);
+  box-shadow: 0 2px 12px rgba(124,58,237,0.3);
+  white-space: nowrap;
+}
+.nav-download-btn:hover {
+  background: #6d28d9;
+  color: #fff !important;
+  box-shadow: 0 4px 20px rgba(124,58,237,0.45);
+}
+
 .nav-github {
   font-size: 13px;
   padding: 6px 14px;
@@ -344,6 +362,7 @@
   .navbar-links,
   .nav-docs,
   .nav-github,
+  .nav-download-btn,
   .height-pill {
     display: none !important;
   }

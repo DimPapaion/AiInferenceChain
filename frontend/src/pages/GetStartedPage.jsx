@@ -29,8 +29,9 @@ const OPERATOR_PATHS = [
   {
     label: 'DNN validator',
     title: 'Run a model-backed validator',
-    body: 'Load a supported architecture and weights, register the node, complete Proof of Model, then join QoI consensus rounds.',
-    command: 'python node_runner.py --node-type dnn --model resnet20 --weights-dir models/weights --private-key <hex_private_key>',
+    body: 'Download the InferenceChain desktop app, upload your architecture file, connect a dataset, configure training in the hyperparameter panel, and submit your signed checkpoint — no command line required.',
+    command: '↓ Download the desktop app from inferencechain.io/run-a-node',
+    isDownload: true,
   },
   {
     label: 'LLM-enabled node',
@@ -124,7 +125,19 @@ export default function GetStartedPage({ navigate }) {
                 <div className="gs-ops-label">{path.label}</div>
                 <h3>{path.title}</h3>
                 <p>{path.body}</p>
-                <div className="gs-command">{path.command}</div>
+                {path.isDownload ? (
+                  <a
+                    className="btn btn-primary"
+                    href="https://github.com/DimPapaion/AiInferenceChain/releases/latest"
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ display: 'inline-flex', marginTop: 4 }}
+                  >
+                    ↓ Download Desktop App
+                  </a>
+                ) : (
+                  <div className="gs-command">{path.command}</div>
+                )}
               </div>
             ))}
           </div>

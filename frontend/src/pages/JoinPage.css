@@ -324,3 +324,245 @@
 .jp-req-row:last-child { border-bottom: none; }
 .jp-req-key { color: var(--text-3); font-weight: 500; }
 .jp-req-val { color: var(--text-1); }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   NEW: Download / Run-a-Node page layout
+   ════════════════════════════════════════════════════════════════════════════ */
+
+.jp-root { padding-bottom: 80px; }
+
+/* ── Hero ─────────────────────────────────────────────────────────────────── */
+.jp-hero {
+  padding: 80px 0 64px;
+  text-align: center;
+}
+.jp-hero-shell {
+  max-width: 680px;
+  margin: 0 auto;
+}
+.jp-hero-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--purple-light);
+  margin-bottom: 16px;
+}
+.jp-hero-title {
+  font-size: clamp(28px, 4vw, 44px);
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 20px;
+}
+.jp-hero-sub {
+  font-size: 16px;
+  color: var(--text-2);
+  line-height: 1.7;
+  margin-bottom: 36px;
+}
+.jp-hero-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+/* Download button */
+.jp-download-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 16px 40px;
+  background: var(--purple);
+  color: #fff;
+  border-radius: var(--radius);
+  font-size: 16px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background var(--transition), box-shadow var(--transition);
+  box-shadow: 0 8px 32px rgba(124,58,237,0.35);
+}
+.jp-download-btn:hover {
+  background: #6d28d9;
+  color: #fff;
+  box-shadow: 0 12px 40px rgba(124,58,237,0.5);
+}
+.jp-dl-icon { font-size: 22px; line-height: 1; }
+.jp-dl-sub {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.7;
+  letter-spacing: 0.03em;
+}
+.jp-other-os {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.jp-os-link {
+  color: var(--blue);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color var(--transition);
+}
+.jp-os-link:hover { color: var(--cyan); }
+.jp-os-sep { color: var(--text-3); }
+.jp-os-note { font-size: 12px; color: var(--text-3); }
+
+/* ── Shared section layout ────────────────────────────────────────────────── */
+.jp-section {
+  padding: 64px 0;
+}
+.jp-section-alt {
+  background: var(--bg-1);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.jp-section-head {
+  margin-bottom: 40px;
+  max-width: 640px;
+}
+.jp-section-head h2 {
+  font-size: clamp(20px, 2.5vw, 28px);
+  font-weight: 700;
+  line-height: 1.25;
+  margin-bottom: 10px;
+}
+.jp-section-sub {
+  font-size: 14px;
+  color: var(--text-2);
+  line-height: 1.7;
+  margin-top: 8px;
+}
+
+/* ── How it works ─────────────────────────────────────────────────────────── */
+.jp-how-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+@media (max-width: 780px) {
+  .jp-how-grid { grid-template-columns: 1fr; }
+}
+.jp-how-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 24px;
+  position: relative;
+}
+.jp-how-num {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 12px;
+}
+.jp-how-icon {
+  font-size: 26px;
+  color: var(--purple-light);
+  margin-bottom: 12px;
+}
+.jp-how-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-1);
+  margin-bottom: 8px;
+}
+.jp-how-body {
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.65;
+}
+
+/* ── App features grid ────────────────────────────────────────────────────── */
+.jp-feat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+@media (max-width: 900px) { .jp-feat-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 600px) { .jp-feat-grid { grid-template-columns: 1fr; } }
+
+.jp-feat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.jp-feat-icon {
+  font-size: 22px;
+  color: var(--purple-light);
+}
+.jp-feat-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-1);
+}
+.jp-feat-body {
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.65;
+}
+
+/* ── System requirements ──────────────────────────────────────────────────── */
+.jp-sysreq {
+  padding: 0;
+  overflow: hidden;
+}
+.jp-sysreq-row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 20px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.jp-sysreq-row:last-child { border-bottom: none; }
+.jp-sysreq-label { color: var(--text-3); font-weight: 600; }
+.jp-sysreq-val   { color: var(--text-1); line-height: 1.55; }
+.jp-sysreq-note {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 12px;
+  line-height: 1.6;
+}
+
+/* ── Advanced toggle ──────────────────────────────────────────────────────── */
+.jp-advanced-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 14px 20px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-md);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.jp-advanced-toggle:hover {
+  border-color: var(--purple);
+  color: var(--text-1);
+}
+.jp-adv-caret {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.jp-advanced-hint {
+  font-size: 13px;
+  color: var(--text-3);
+  margin-top: 8px;
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
