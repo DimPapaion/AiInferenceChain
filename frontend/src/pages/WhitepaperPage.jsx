@@ -121,10 +121,11 @@ const TOKEN_STATS = [
 ];
 
 const FLOW_STEPS = [
-  { n: '01', title: 'Submit Request', body: 'Client hashes image client-side (SHA-256) and submits INFERENCE_REQUEST to the mempool.', color: 'purple' },
-  { n: '02', title: 'PRE-PREPARE', body: 'Primary DNN validator runs inference, broadcasts output probability vector to all peers.', color: 'blue' },
-  { n: '03', title: 'PREPARE', body: 'Each DNN validator runs the same image locally, broadcasts its vector. Cosine similarity is computed pairwise.', color: 'cyan' },
-  { n: '04', title: 'COMMIT', body: 'When 2f+1 PREPAREs agree, COMMIT phase finalises. QoI block is written on-chain with result + reputation deltas.', color: 'green' },
+  { n: '01', title: 'Request enters the network', body: 'A client submits an inference request, the chain records it, and the request becomes available for routing and validator selection.', color: 'purple' },
+  { n: '02', title: 'Eligible validators are filtered', body: 'The engine filters by model and dataset compatibility before selecting the working quorum for the request.', color: 'blue' },
+  { n: '03', title: 'OOD-biased shortlist is formed', body: 'If calibrated OOD profiles exist, the network prefers validators that are most in-distribution for the incoming sample while keeping deterministic selection.', color: 'cyan' },
+  { n: '04', title: 'QoI consensus commits the result', body: 'Validators exchange predictions, the network reaches 2f+1 agreement, and the final result plus reputation updates are committed on-chain.', color: 'green' },
+  { n: '05', title: 'Optional orchestration layer assists', body: 'Above the core protocol, the LLM layer can route requests, analyse validator behaviour, decompose tasks, and explain chain state without affecting consensus.', color: 'purple' },
 ];
 
 // ── Animated counter ──────────────────────────────────────────────────────────
@@ -239,13 +240,16 @@ export default function WhitepaperPage({ navigate }) {
           </h1>
 
           <p className="wp-hero-sub">
-            A decentralised blockchain where DNN validators reach consensus on the
-            <em> quality</em> of AI inference results — not just on transaction order.
+            This page summarizes the technical whitepaper: the protocol stack, lifecycle,
+            tokenomics, and the newer OOD and orchestration features that now exist in the implementation.
           </p>
 
           <div className="wp-hero-actions">
             <button className="btn wp-btn-primary btn-lg" onClick={download}>
               ↓ Download PDF
+            </button>
+            <button className="btn wp-btn-ghost btn-lg" onClick={() => navigate('about')}>
+              Back to About
             </button>
             <a
               className="btn wp-btn-ghost btn-lg"
@@ -278,12 +282,10 @@ export default function WhitepaperPage({ navigate }) {
       {/* ── Core primitives ───────────────────────────────────────────────── */}
       <section className="wp-primitives page-wrap">
         <div className="wp-sec-header">
-          <p className="section-title">Core Innovations</p>
-          <h2 className="wp-sec-title">Three primitives. One protocol.</h2>
+          <p className="section-title">Whitepaper Summary</p>
+          <h2 className="wp-sec-title">The major building blocks of the network</h2>
           <p className="wp-sec-lead">
-            Each component solves a specific failure mode of existing approaches.
-            Together they form the first blockchain where inference quality is a
-            first-class consensus property.
+            This page is the online summary. The exported PDF remains the full canonical whitepaper artifact.
           </p>
         </div>
         <div className="wp-cards-grid">
@@ -294,8 +296,8 @@ export default function WhitepaperPage({ navigate }) {
       {/* ── Consensus flow ────────────────────────────────────────────────── */}
       <section className="wp-flow">
         <div className="page-wrap">
-          <p className="section-title">Protocol Flow</p>
-          <h2 className="wp-sec-title">From image to committed block</h2>
+          <p className="section-title">Lifecycle</p>
+          <h2 className="wp-sec-title">How the full system operates</h2>
           <div className="wp-flow-steps">
             {FLOW_STEPS.map((s, i) => (
               <div key={s.n} className={`wp-flow-step wp-flow-${s.color}`}>
@@ -349,17 +351,17 @@ export default function WhitepaperPage({ navigate }) {
         <div className="wp-cta-card">
           <div className="wp-cta-glow" />
           <div className="wp-cta-icon">⬡</div>
-          <h2>Read the full whitepaper</h2>
+          <h2>Go deeper or start using the network</h2>
           <p>
-            Complete protocol specification, formal definitions, security proofs,
-            tokenomics model, and implementation details.
+            Use the PDF for the full protocol writeup, or jump into the onboarding flow
+            if you want to create a wallet, explore the chain, or prepare a validator node.
           </p>
           <div className="wp-cta-actions">
             <button className="btn wp-btn-primary btn-lg" onClick={download}>
               ↓ Download PDF
             </button>
-            <button className="btn wp-btn-ghost btn-lg" onClick={() => navigate('join')}>
-              Become a Validator →
+            <button className="btn wp-btn-ghost btn-lg" onClick={() => navigate('about')}>
+              Back to About →
             </button>
           </div>
         </div>

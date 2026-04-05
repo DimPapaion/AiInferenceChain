@@ -273,7 +273,7 @@
 
 .innovations-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 20px;
 }
 @media (max-width: 900px) {
@@ -354,6 +354,87 @@
   color: var(--text-2);
 }
 
+.pathways-section {
+  padding: 80px 0;
+  background: linear-gradient(180deg, rgba(10,18,34,0.4) 0%, rgba(2,6,17,0) 100%);
+}
+
+.pathways-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+@media (max-width: 980px) {
+  .pathways-grid { grid-template-columns: 1fr; }
+}
+
+.path-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) * 1.2);
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+.path-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+}
+
+.path-card-purple::before { background: var(--purple); }
+.path-card-blue::before { background: var(--blue); }
+.path-card-green::before { background: var(--green); }
+
+.path-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.path-card h3 {
+  font-size: 22px;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--text-1);
+  margin: 0;
+}
+
+.path-card p {
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--text-2);
+  margin: 0;
+}
+
+.path-points {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.path-point {
+  padding: 10px 12px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.6;
+}
+
+.path-card .btn {
+  align-self: flex-start;
+}
+
 /* ── How it works ─────────────────────────────────────────────────────────── */
 .how-it-works { padding: 80px 0; }
 .how-it-works h2 {
@@ -401,6 +482,60 @@
   color: var(--text-2);
   line-height: 1.7;
   max-width: 620px;
+}
+
+.ecosystem-section {
+  padding: 80px 0;
+  background: var(--bg-1);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.ecosystem-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+@media (max-width: 980px) {
+  .ecosystem-grid { grid-template-columns: 1fr; }
+}
+
+.ecosystem-card {
+  background: radial-gradient(circle at top left, rgba(97,196,255,0.08), transparent 45%), var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) * 1.1);
+  padding: 28px;
+}
+
+.ecosystem-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #61c4ff;
+  background: rgba(97,196,255,0.08);
+  border: 1px solid rgba(97,196,255,0.2);
+  margin-bottom: 18px;
+}
+
+.ecosystem-card h3 {
+  margin: 0 0 10px;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+  color: var(--text-1);
+}
+
+.ecosystem-card p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--text-2);
 }
 
 /* ── CTA ──────────────────────────────────────────────────────────────────── */

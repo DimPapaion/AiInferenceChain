@@ -5,37 +5,58 @@ import WalletPanel from './WalletPanel';
 import { loadStoredWallet, shortAddr } from '../utils/wallet';
 
 const NAV = [
-  { id: 'home', label: 'Home' },
-  { id: 'explorer', label: 'Explorer' },
-  { id: 'validators', label: 'Validators' },
-  { id: 'inference', label: 'Inference' },
-  { id: 'network', label: 'Network' },
-  { id: 'join', label: 'Become a Node' },
-  { id: 'whitepaper', label: 'Whitepaper' },
+  { type: 'page', id: 'home', label: 'Home' },
+  {
+    type: 'group',
+    id: 'explore',
+    label: 'Explore Chain',
+    summary: 'Operational views into live chain state, validators, inference, and network health.',
+    columns: 2,
+    items: [
+      { id: 'explorer', label: 'Block Explorer', icon: '◫', description: 'Browse blocks, transactions, and chain state' },
+      { id: 'validators', label: 'Validators', icon: '◎', description: 'Inspect stake, reputation, and active nodes' },
+      { id: 'inference', label: 'Inference', icon: '◈', description: 'Submit AI requests and review results' },
+      { id: 'network', label: 'Network', icon: '⌁', description: 'View peers, gossip, and network health' },
+    ],
+  },
+  { type: 'page', id: 'get-started', label: 'Get Started' },
+  { type: 'page', id: 'join', label: 'Run a Node' },
+  {
+    type: 'group',
+    id: 'about',
+    label: 'About',
+    summary: 'Overview, whitepaper, research context, and future-facing ecosystem sections.',
+    columns: 2,
+    items: [
+      { id: 'about', label: 'Overview', icon: '⬡', description: 'High-level product, protocol, and participation overview' },
+      { id: 'whitepaper', label: 'Whitepaper', icon: '✦', description: 'Technical whitepaper summary and PDF access' },
+      { id: 'research', label: 'Research', icon: '◌', description: 'Protocol papers, current research themes, and roadmap context' },
+      { id: 'news', label: 'News', icon: '◍', description: 'Release notes and network updates placeholder' },
+      { id: 'partners', label: 'Partners', icon: '◇', description: 'Collaborators and ecosystem placeholder' },
+      { href: '/InferenceChain_Whitepaper.pdf', label: 'Download PDF', icon: '↓', description: 'Exported PDF generated from WHITEPAPER.md', external: true },
+    ],
+  },
 ];
 
 export default function NavBar({ current, navigate }) {
-  const [height,       setHeight]       = useState(null);
-  const [open,         setOpen]         = useState(false);
-  const [walletOpen,   setWalletOpen]   = useState(false);
-  const [walletAddr,   setWalletAddr]   = useState(() => loadStoredWallet()?.address ?? null);
+  const [height, setHeight] = useState(null);
+  const [open, setOpen] = useState(false);
+  const [walletOpen, setWalletOpen] = useState(false);
+  const [walletAddr, setWalletAddr] = useState(() => loadStoredWallet()?.address ?? null);
   const year = new Date().getFullYear();
 
-  // Refresh wallet address label whenever panel closes (user may have imported/generated)
   const handleWalletClose = () => {
     setWalletOpen(false);
     setWalletAddr(loadStoredWallet()?.address ?? null);
   };
 
   useEffect(() => {
-    const fetch = () =>
-      chainApi.height().then(d => setHeight(d.height)).catch(() => {});
+    const fetch = () => chainApi.height().then((data) => setHeight(data.height)).catch(() => {});
     fetch();
     const id = setInterval(fetch, 5000);
     return () => clearInterval(id);
   }, []);
 
-  // Prevent body scroll when menu is open
   useEffect(() => {
     document.body.style.overflow = open ? 'hidden' : '';
     return () => {
@@ -48,24 +69,75 @@ export default function NavBar({ current, navigate }) {
     setOpen(false);
   };
 
+  const isActive = (entry) => {
+    if (entry.type === 'page') return current === entry.id;
+    return entry.items.some((item) => item.id === current);
+  };
+
   return (
     <>
       <nav className="navbar">
         <div className="navbar-inner">
-          <button className="navbar-logo" onClick={() => go('home')}>
+          <button className="navbar-logo" onClick={() => go('home')} type="button">
             <span className="logo-icon">⬡</span>
             <span className="logo-text">InferenceChain</span>
           </button>
 
           <ul className="navbar-links">
-            {NAV.map(n => (
-              <li key={n.id}>
-                <button
-                  className={`nav-link ${current === n.id ? 'active' : ''}`}
-                  onClick={() => go(n.id)}
-                >
-                  {n.label}
-                </button>
+            {NAV.map((entry) => (
+              <li key={entry.id} className="nav-item">
+                {entry.type === 'page' ? (
+                  <button
+                    className={`nav-link ${isActive(entry) ? 'active' : ''}`}
+                    onClick={() => go(entry.id)}
+                    type="button"
+                  >
+                    {entry.label}
+                  </button>
+                ) : (
+                  <div className={`nav-group ${isActive(entry) ? 'active' : ''}`}>
+                    <button className="nav-group-button" type="button">
+                      <span>{entry.label}</span>
+                      <span className="nav-caret">▾</span>
+                    </button>
+                    <div className={`nav-dropdown nav-dropdown-columns-${entry.columns || 1}`}>
+                      <div className="nav-dropdown-head">
+                        <div className="nav-dropdown-kicker">{entry.label}</div>
+                        <div className="nav-dropdown-summary">{entry.summary}</div>
+                      </div>
+                      {entry.items.map((item) => (
+                        item.external ? (
+                          <a
+                            key={item.label}
+                            className="nav-dropdown-item"
+                            href={item.href}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <span className="nav-dropdown-icon">{item.icon}</span>
+                            <span className="nav-dropdown-copy">
+                              <span className="nav-dropdown-title">{item.label}</span>
+                              <span className="nav-dropdown-desc">{item.description}</span>
+                            </span>
+                          </a>
+                        ) : (
+                          <button
+                            key={item.id}
+                            className={`nav-dropdown-item ${current === item.id ? 'active' : ''}`}
+                            onClick={() => go(item.id)}
+                            type="button"
+                          >
+                            <span className="nav-dropdown-icon">{item.icon}</span>
+                            <span className="nav-dropdown-copy">
+                              <span className="nav-dropdown-title">{item.label}</span>
+                              <span className="nav-dropdown-desc">{item.description}</span>
+                            </span>
+                          </button>
+                        )
+                      ))}
+                    </div>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -86,19 +158,16 @@ export default function NavBar({ current, navigate }) {
             <a className="btn btn-ghost nav-docs" href="http://localhost:8000/docs" target="_blank" rel="noreferrer">
               API Docs ↗
             </a>
-
             <button
               className={`btn nav-wallet-btn ${walletAddr ? 'connected' : ''}`}
               onClick={() => setWalletOpen(true)}
               title="Open wallet"
+              type="button"
             >
               <span className="wallet-btn-icon">⬡</span>
-              <span className="wallet-btn-label">
-                {walletAddr ? shortAddr(walletAddr) : 'Wallet'}
-              </span>
+              <span className="wallet-btn-label">{walletAddr ? shortAddr(walletAddr) : 'Wallet'}</span>
             </button>
-
-            <button className="hamburger" onClick={() => setOpen(true)} aria-label="Open menu">
+            <button className="hamburger" onClick={() => setOpen(true)} aria-label="Open menu" type="button">
               <span /><span /><span />
             </button>
           </div>
@@ -108,24 +177,53 @@ export default function NavBar({ current, navigate }) {
       {open && (
         <div className="mobile-overlay">
           <div className="mobile-overlay-header">
-            <button className="mobile-overlay-logo" onClick={() => go('home')}>
+            <button className="mobile-overlay-logo" onClick={() => go('home')} type="button">
               <span className="logo-icon">⬡</span>
               <span className="logo-text">InferenceChain</span>
             </button>
-            <button className="mobile-close" onClick={() => setOpen(false)} aria-label="Close menu">
+            <button className="mobile-close" onClick={() => setOpen(false)} aria-label="Close menu" type="button">
               ✕
             </button>
           </div>
 
           <nav className="mobile-nav-links">
-            {NAV.map(n => (
-              <button
-                key={n.id}
-                className={`mobile-link ${current === n.id ? 'active' : ''}`}
-                onClick={() => go(n.id)}
-              >
-                {n.label}
-              </button>
+            {NAV.map((entry) => (
+              entry.type === 'page' ? (
+                <button
+                  key={entry.id}
+                  className={`mobile-link ${isActive(entry) ? 'active' : ''}`}
+                  onClick={() => go(entry.id)}
+                  type="button"
+                >
+                  {entry.label}
+                </button>
+              ) : (
+                <div key={entry.id} className="mobile-nav-section">
+                  <div className="mobile-section-label">{entry.label}</div>
+                  {entry.items.map((item) => (
+                    item.external ? (
+                      <a
+                        key={item.label}
+                        className="mobile-link mobile-sublink"
+                        href={item.href}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {item.label}
+                      </a>
+                    ) : (
+                      <button
+                        key={item.id}
+                        className={`mobile-link mobile-sublink ${current === item.id ? 'active' : ''}`}
+                        onClick={() => go(item.id)}
+                        type="button"
+                      >
+                        {item.label}
+                      </button>
+                    )
+                  ))}
+                </div>
+              )
             ))}
           </nav>
 
@@ -142,6 +240,7 @@ export default function NavBar({ current, navigate }) {
             <button
               className="mobile-footer-link mobile-wallet-link"
               onClick={() => { setOpen(false); setWalletOpen(true); }}
+              type="button"
             >
               ⬡ {walletAddr ? shortAddr(walletAddr) : 'Wallet'}
             </button>
