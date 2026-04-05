@@ -11,27 +11,29 @@ let sidecarPort = 47291; // fixed local port for Python sidecar
 
 // ── Sidecar management ────────────────────────────────────────────────────────
 
-function getSidecarPath() {
+/**
+ * Returns { cmd, args } for launching the Python sidecar.
+ * Dev:  python sidecar/main.py  (uses system python)
+ * Prod: resources/sidecar/sidecar[.exe]  (PyInstaller one-dir bundle)
+ */
+function getSidecarCmd() {
   if (isDev) {
-    return path.join(__dirname, '..', 'sidecar', 'main.py');
+    return {
+      cmd: 'python',
+      args: [path.join(__dirname, '..', 'sidecar', 'main.py')],
+    };
   }
-  return path.join(process.resourcesPath, 'sidecar', 'main.py');
-}
-
-function getPythonExecutable() {
-  if (isDev) return 'python';
-  // Bundled python in resources (set up by electron-builder extraResources)
-  const base = isDev ? __dirname : process.resourcesPath;
-  const winPy = path.join(base, 'python', 'python.exe');
-  const unixPy = path.join(base, 'python', 'bin', 'python3');
-  return process.platform === 'win32' ? winPy : unixPy;
+  const ext = process.platform === 'win32' ? '.exe' : '';
+  return {
+    cmd: path.join(process.resourcesPath, 'sidecar', `sidecar${ext}`),
+    args: [],
+  };
 }
 
 function startSidecar() {
-  const py = getPythonExecutable();
-  const script = getSidecarPath();
+  const { cmd, args } = getSidecarCmd();
 
-  sidecarProcess = spawn(py, [script, '--port', String(sidecarPort)], {
+  sidecarProcess = spawn(cmd, [...args, '--port', String(sidecarPort)], {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, SIDECAR_PORT: String(sidecarPort) },
   });

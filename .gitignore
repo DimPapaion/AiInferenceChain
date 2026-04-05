@@ -36,6 +36,8 @@ datasets/
 !frontend/package.json
 !frontend/package-lock.json
 !frontend/public/manifest.json
+!desktop/package.json
+!desktop/package-lock.json
 
 # Logs
 logs/

@@ -1,0 +1,61 @@
+name: Desktop Release
+
+# Triggers when a version tag (e.g. v0.1.0) is pushed.
+# Builds the Windows installer and publishes it to GitHub Releases
+# so the "Download App" button on the website points to a real file.
+on:
+  push:
+    tags:
+      - "v*"
+
+# Allow the workflow to create/write GitHub Releases and upload assets
+permissions:
+  contents: write
+
+jobs:
+  # ── Windows installer (NSIS .exe) ──────────────────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Python sidecar ────────────────────────────────────────────────────
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller
+          python -m pip install -r desktop/sidecar/requirements.txt
+
+      - name: Build sidecar with PyInstaller
+        working-directory: desktop/sidecar
+        run: pyinstaller sidecar.spec
+
+      # ── Electron + React ─────────────────────────────────────────────────
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install Node dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Build React renderer
+        working-directory: desktop
+        run: npm run build:react
+
+      - name: Build Electron installer and publish to GitHub Releases
+        working-directory: desktop
+        # -p always  →  publish unconditionally (creates/updates the Release)
+        # GH_TOKEN   →  allows electron-builder to upload assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run build:electron -- -p always
