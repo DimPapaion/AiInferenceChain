@@ -43,14 +43,20 @@ def S(name, **kw):
 
 styles = {
     "title": S("WPTitle",
-        fontName="Helvetica-Bold", fontSize=28, leading=34,
-        textColor=DARK, alignment=TA_CENTER, spaceAfter=4),
+        fontName="Helvetica-Bold", fontSize=44, leading=50,
+        textColor=DARK, alignment=TA_CENTER, spaceAfter=8, spaceBefore=60),
     "subtitle": S("WPSubtitle",
-        fontName="Helvetica", fontSize=13, leading=18,
-        textColor=MUTED, alignment=TA_CENTER, spaceAfter=2),
+        fontName="Helvetica", fontSize=16, leading=22,
+        textColor=ACCENT, alignment=TA_CENTER, spaceAfter=20),
+    "principles": S("WPPrinciples",
+        fontName="Helvetica-Bold", fontSize=11, leading=16,
+        textColor=ACCENT, alignment=TA_CENTER, spaceAfter=24),
     "version": S("WPVersion",
         fontName="Helvetica-Oblique", fontSize=10,
-        textColor=MUTED, alignment=TA_CENTER, spaceAfter=20),
+        textColor=MUTED, alignment=TA_CENTER, spaceAfter=8),
+    "author": S("WPAuthor",
+        fontName="Helvetica", fontSize=10,
+        textColor=MUTED, alignment=TA_CENTER, spaceAfter=12),
     "abstract_label": S("AbsLabel",
         fontName="Helvetica-Bold", fontSize=10,
         textColor=ACCENT, spaceAfter=2),
@@ -60,7 +66,7 @@ styles = {
         leftIndent=20, rightIndent=20, spaceAfter=16),
     "h1": S("H1",
         fontName="Helvetica-Bold", fontSize=16, leading=20,
-        textColor=colors.white, spaceBefore=20, spaceAfter=8,
+        textColor=colors.white, spaceBefore=16, spaceAfter=8,
         backColor=PANEL, borderColor=ACCENT, borderWidth=0.8,
         borderPadding=8, leftIndent=0, rightIndent=0),
     "h2": S("H2",
@@ -135,6 +141,7 @@ def parse_md(md_text):
     lines = md_text.splitlines()
     i = 0
     in_abstract = False
+    is_cover = True  # Track if we're on the cover page (before first ---)
 
     while i < len(lines):
         line = lines[i]
@@ -152,28 +159,36 @@ def parse_md(md_text):
             continue
 
         # ── Horizontal rule ───────────────────────────────────────────────────
-        if re.match(r'^-{3,}$', line.strip()) or re.match(r'^#{1,3} -{3,}', line.strip()):
-            flowables.append(Spacer(1, 6))
-            flowables.append(HRFlowable(width="100%", thickness=0.5, color=RULE))
-            flowables.append(Spacer(1, 6))
+        if re.match(r'^-{3,}$', line.strip()):
+            flowables.append(Spacer(1, 12))
+            is_cover = False  # End of cover page
             i += 1
             continue
 
-        # ── Headings ──────────────────────────────────────────────────────────
+        # ── Main title (cover only) ───────────────────────────────────────────
         if line.startswith("# ") and not line.startswith("## "):
-            title_text = line[2:].strip()
-            # Split title / subtitle / version on first "###"
-            if "### " in title_text:
-                parts = title_text.split("### ", 1)
-                flowables.append(Paragraph(escape(parts[0].strip()), styles["title"]))
-                flowables.append(Paragraph(escape(parts[1].strip()), styles["subtitle"]))
-            else:
+            if is_cover:
+                title_text = line[2:].strip()
                 flowables.append(Paragraph(escape(title_text), styles["title"]))
-            i += 1
-            continue
+                # Add decorative line separator
+                flowables.append(Spacer(1, 8))
+                flowables.append(HRFlowable(width="70%", thickness=1, color=ACCENT))
+                flowables.append(Spacer(1, 12))
+                i += 1
+                continue
+            else:
+                # Regular section heading
+                text = line[2:].strip()
+                flowables.append(Spacer(1, 4))
+                flowables.append(HRFlowable(width="100%", thickness=0.5, color=RULE))
+                flowables.append(Paragraph(md_inline(text), styles["h1"]))
+                i += 1
+                continue
 
-        if line.startswith("### "):
-            flowables.append(Paragraph(md_inline(line[4:].strip()), styles["h3"]))
+        # ── Subtitle (## on cover) ────────────────────────────────────────────
+        if line.startswith("## ") and is_cover:
+            text = line[3:].strip()
+            flowables.append(Paragraph(escape(text), styles["subtitle"]))
             i += 1
             continue
 
@@ -182,14 +197,21 @@ def parse_md(md_text):
             flowables.append(Spacer(1, 4))
             flowables.append(Paragraph("ABSTRACT", styles["abstract_label"]))
             in_abstract = True
+            is_cover = False
             i += 1
             continue
 
+        # ── Section headings (after cover) ────────────────────────────────────
         if line.startswith("## "):
             text = line[3:].strip()
             flowables.append(Spacer(1, 4))
             flowables.append(HRFlowable(width="100%", thickness=0.5, color=RULE))
             flowables.append(Paragraph(md_inline(text), styles["h1"]))
+            i += 1
+            continue
+
+        if line.startswith("### "):
+            flowables.append(Paragraph(md_inline(line[4:].strip()), styles["h3"]))
             i += 1
             continue
 
@@ -242,16 +264,31 @@ def parse_md(md_text):
             i += 1
             continue
 
-        # ── Version / italicised subtitle line ───────────────────────────────
-        if line.startswith("### ") and ("v0." in line or "April" in line or "2026" in line):
-            flowables.append(Paragraph(escape(line[4:].strip()), styles["version"]))
-            i += 1
-            continue
-
         # ── Blank line ────────────────────────────────────────────────────────
         if not line.strip():
             flowables.append(Spacer(1, 4))
             in_abstract = False
+            i += 1
+            continue
+
+        # ── Cover page: bold text (principles, metadata) ──────────────────────
+        if is_cover and line.startswith("**") and line.endswith("**"):
+            text = escape(line[2:-2].strip())
+            if "·" in text:
+                # Principles line
+                flowables.append(Paragraph(text, styles["principles"]))
+            elif "v0." in text or "April" in text:
+                # Version info
+                flowables.append(Paragraph(text, styles["version"]))
+            else:
+                # Document label
+                flowables.append(Paragraph(text, styles["version"]))
+            i += 1
+            continue
+
+        # ── Cover page: author/affiliation ────────────────────────────────────
+        if is_cover and not line.startswith("#"):
+            flowables.append(Paragraph(escape(line.strip()), styles["author"]))
             i += 1
             continue
 
@@ -272,16 +309,16 @@ def on_page(canvas, doc):
     canvas.setFillColor(BG)
     canvas.rect(0, 0, w, h, fill=1, stroke=0)
 
-    # Top accent strip + rule
-    canvas.setFillColor(colors.HexColor("#29104d"))
-    canvas.rect(0, h - 0.50 * cm, w, 0.50 * cm, fill=1, stroke=0)
-    canvas.setFillColor(ACCENT)
-    canvas.rect(0, h - 0.50 * cm, w * 0.34, 0.50 * cm, fill=1, stroke=0)
-
-    # Cover-only geometric logo motif
+    # Cover page: hexagon logo + title
     if doc.page == 1:
-        cx, cy = w / 2, h - 4.2 * cm
-        for r, col in [(2.4, colors.HexColor("#1b1244")), (2.0, colors.HexColor("#2a1764")), (1.6, colors.HexColor("#5b21b6")), (1.2, colors.HexColor("#7c3aed"))]:
+        # Hexagon logo at top (centered, glowing effect)
+        cx, cy = w / 2, h - 3.5 * cm
+        
+        # Layered hexagon rings for glow effect
+        for r, col in [(2.2, colors.HexColor("#1b1244")), 
+                       (1.8, colors.HexColor("#2a1764")), 
+                       (1.4, colors.HexColor("#5b21b6")), 
+                       (1.0, colors.HexColor("#7c3aed"))]:
             canvas.setFillColor(col)
             p = canvas.beginPath()
             for k in range(6):
@@ -294,8 +331,16 @@ def on_page(canvas, doc):
                     p.lineTo(x, y)
             p.close()
             canvas.drawPath(p, fill=1, stroke=0)
+        
+        # White center square
         canvas.setFillColor(colors.HexColor("#f8fafc"))
-        canvas.rect(cx - 0.38 * cm, cy - 0.38 * cm, 0.76 * cm, 0.76 * cm, fill=1, stroke=0)
+        canvas.rect(cx - 0.35 * cm, cy - 0.35 * cm, 0.70 * cm, 0.70 * cm, fill=1, stroke=0)
+
+    # Non-cover pages: minimal top decoration
+    else:
+        canvas.setFillColor(colors.HexColor("#29104d"))
+        canvas.setLineWidth(0.5)
+        canvas.line(0.5 * cm, h - 1.2 * cm, w - 0.5 * cm, h - 1.2 * cm)
 
     # Bottom footer
     canvas.setFont("Helvetica", 8)
