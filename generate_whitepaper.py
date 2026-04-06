@@ -44,7 +44,7 @@ def S(name, **kw):
 styles = {
     "title": S("WPTitle",
         fontName="Helvetica-Bold", fontSize=44, leading=50,
-        textColor=DARK, alignment=TA_CENTER, spaceAfter=8, spaceBefore=60),
+        textColor=DARK, alignment=TA_CENTER, spaceAfter=8, spaceBefore=120),
     "subtitle": S("WPSubtitle",
         fontName="Helvetica", fontSize=16, leading=22,
         textColor=ACCENT, alignment=TA_CENTER, spaceAfter=20),
@@ -312,7 +312,7 @@ def on_page(canvas, doc):
     # Cover page: hexagon logo + title
     if doc.page == 1:
         # Hexagon logo at top (centered, glowing effect)
-        cx, cy = w / 2, h - 3.5 * cm
+        cx, cy = w / 2, h - 2.0 * cm
         
         # Layered hexagon rings for glow effect
         for r, col in [(2.2, colors.HexColor("#1b1244")), 
@@ -361,7 +361,7 @@ def build():
         pagesize=A4,
         leftMargin=2 * cm,
         rightMargin=2 * cm,
-        topMargin=1.8 * cm,
+        topMargin=3.5 * cm,
         bottomMargin=1.6 * cm,
     )
     doc.build(flowables, onFirstPage=on_page, onLaterPages=on_page)
