@@ -6,6 +6,7 @@ Run: python generate_whitepaper.py
 
 import re
 import shutil
+import math
 from pathlib import Path
 
 from reportlab.lib import colors
@@ -26,11 +27,13 @@ PUB_PATH   = ROOT / "frontend" / "public" / "InferenceChain_Whitepaper.pdf"
 BUILD_PATH = ROOT / "frontend" / "build"  / "InferenceChain_Whitepaper.pdf"
 
 # ── Colour palette ────────────────────────────────────────────────────────────
-DARK   = colors.HexColor("#0f172a")   # headings / body
-ACCENT = colors.HexColor("#6366f1")   # indigo — brand colour
-MUTED  = colors.HexColor("#64748b")   # secondary text
-CODE   = colors.HexColor("#1e293b")   # code block background
-RULE   = colors.HexColor("#e2e8f0")   # horizontal rule
+BG     = colors.HexColor("#06081a")   # page background
+PANEL  = colors.HexColor("#131933")   # section title panels
+DARK   = colors.HexColor("#d9e2ff")   # primary text (kept name for compatibility)
+ACCENT = colors.HexColor("#7c3aed")   # purple brand accent
+MUTED  = colors.HexColor("#9aa8d6")   # secondary text
+CODE   = colors.HexColor("#0f1430")   # code block background
+RULE   = colors.HexColor("#1e294f")   # separators
 
 # ── Styles ────────────────────────────────────────────────────────────────────
 base = getSampleStyleSheet()
@@ -57,7 +60,9 @@ styles = {
         leftIndent=20, rightIndent=20, spaceAfter=16),
     "h1": S("H1",
         fontName="Helvetica-Bold", fontSize=16, leading=20,
-        textColor=ACCENT, spaceBefore=20, spaceAfter=6),
+        textColor=colors.white, spaceBefore=20, spaceAfter=8,
+        backColor=PANEL, borderColor=ACCENT, borderWidth=0.8,
+        borderPadding=8, leftIndent=0, rightIndent=0),
     "h2": S("H2",
         fontName="Helvetica-Bold", fontSize=13, leading=17,
         textColor=DARK, spaceBefore=14, spaceAfter=4),
@@ -73,7 +78,7 @@ styles = {
         spaceAfter=3),
     "code": S("Code",
         fontName="Courier", fontSize=8.5, leading=12,
-        textColor=colors.HexColor("#e2e8f0"),
+        textColor=colors.HexColor("#dbeafe"),
         backColor=CODE, leftIndent=12, rightIndent=12,
         spaceBefore=4, spaceAfter=6),
     "footer": S("Footer",
@@ -82,12 +87,12 @@ styles = {
 }
 
 TABLE_STYLE = TableStyle([
-    ("BACKGROUND",   (0, 0), (-1, 0),  ACCENT),
+    ("BACKGROUND",   (0, 0), (-1, 0),  colors.HexColor("#5b21b6")),
     ("TEXTCOLOR",    (0, 0), (-1, 0),  colors.white),
     ("FONTNAME",     (0, 0), (-1, 0),  "Helvetica-Bold"),
     ("FONTSIZE",     (0, 0), (-1, -1), 9),
     ("FONTNAME",     (0, 1), (-1, -1), "Helvetica"),
-    ("ROWBACKGROUNDS",(0,1),(-1,-1),   [colors.white, colors.HexColor("#f8fafc")]),
+    ("ROWBACKGROUNDS",(0,1),(-1,-1),   [colors.HexColor("#121833"), colors.HexColor("#0d132b")]),
     ("GRID",         (0, 0), (-1, -1), 0.4, RULE),
     ("TOPPADDING",   (0, 0), (-1, -1), 4),
     ("BOTTOMPADDING",(0, 0), (-1, -1), 4),
@@ -172,19 +177,19 @@ def parse_md(md_text):
             i += 1
             continue
 
-        if line.startswith("## "):
-            text = line[3:].strip()
-            flowables.append(Spacer(1, 4))
-            flowables.append(HRFlowable(width="100%", thickness=0.5, color=RULE))
-            flowables.append(Paragraph(md_inline(text), styles["h1"]))
-            i += 1
-            continue
-
         # ── Abstract label ────────────────────────────────────────────────────
         if line.strip() == "## Abstract":
             flowables.append(Spacer(1, 4))
             flowables.append(Paragraph("ABSTRACT", styles["abstract_label"]))
             in_abstract = True
+            i += 1
+            continue
+
+        if line.startswith("## "):
+            text = line[3:].strip()
+            flowables.append(Spacer(1, 4))
+            flowables.append(HRFlowable(width="100%", thickness=0.5, color=RULE))
+            flowables.append(Paragraph(md_inline(text), styles["h1"]))
             i += 1
             continue
 
@@ -263,9 +268,35 @@ def parse_md(md_text):
 def on_page(canvas, doc):
     canvas.saveState()
     w, h = A4
-    # Top accent bar
+    # Full dark background
+    canvas.setFillColor(BG)
+    canvas.rect(0, 0, w, h, fill=1, stroke=0)
+
+    # Top accent strip + rule
+    canvas.setFillColor(colors.HexColor("#29104d"))
+    canvas.rect(0, h - 0.50 * cm, w, 0.50 * cm, fill=1, stroke=0)
     canvas.setFillColor(ACCENT)
-    canvas.rect(0, h - 0.35 * cm, w, 0.35 * cm, fill=1, stroke=0)
+    canvas.rect(0, h - 0.50 * cm, w * 0.34, 0.50 * cm, fill=1, stroke=0)
+
+    # Cover-only geometric logo motif
+    if doc.page == 1:
+        cx, cy = w / 2, h - 4.2 * cm
+        for r, col in [(2.4, colors.HexColor("#1b1244")), (2.0, colors.HexColor("#2a1764")), (1.6, colors.HexColor("#5b21b6")), (1.2, colors.HexColor("#7c3aed"))]:
+            canvas.setFillColor(col)
+            p = canvas.beginPath()
+            for k in range(6):
+                ang = (60 * k + 30) * 3.141592653589793 / 180.0
+                x = cx + (r * cm) * math.cos(ang)
+                y = cy + (r * cm) * math.sin(ang)
+                if k == 0:
+                    p.moveTo(x, y)
+                else:
+                    p.lineTo(x, y)
+            p.close()
+            canvas.drawPath(p, fill=1, stroke=0)
+        canvas.setFillColor(colors.HexColor("#f8fafc"))
+        canvas.rect(cx - 0.38 * cm, cy - 0.38 * cm, 0.76 * cm, 0.76 * cm, fill=1, stroke=0)
+
     # Bottom footer
     canvas.setFont("Helvetica", 8)
     canvas.setFillColor(MUTED)

@@ -27,6 +27,15 @@ Aristotle University of Thessaloniki (AUTH) · InferenceChain Research
 11. Tokenomics — INFER Token
 12. Vision & Roadmap
 13. Conclusion
+14. Appendix A — Wallet Cryptography & Transaction Construction
+15. Appendix B — Desktop Application Architecture (Electron + Sidecar)
+16. Appendix C — LLM Orchestration Layer (Route/Analyse/Decompose/Explain)
+17. Appendix D — End-to-End Transaction Lifecycle & State Transitions
+18. Appendix E — API Surface & Endpoint Contracts
+19. Appendix F — Data, Models, and Training Pipeline
+20. Appendix G — Security Model & Threat Analysis
+21. Appendix H — Test Coverage, Validation, and Known Gaps
+22. Appendix I — Deployment, Operations, and Observability
 
 ---
 
@@ -369,6 +378,330 @@ Complete working implementation demonstrates protocol is not merely theoretical.
 INFER token creates self-sustaining economic system where quality and security incentives align: stake securing network proportionally determines reward shares; reputation — earned only through quality — amplifies stake's influence.
 
 InferenceChain is positioned to become the trust infrastructure for the AI era — making AI outputs as verifiable as blockchain transactions.
+
+---
+
+## 14. Appendix A — Wallet Cryptography & Transaction Construction
+
+This appendix documents the wallet implementation currently shipped in the React frontend and how it maps to backend signature verification.
+
+### 14.1 Key Material, Address Scheme, and Storage
+
+The frontend wallet (`frontend/src/utils/wallet.js`) implements a deterministic secp256k1 flow:
+
+| Artifact | Implementation Detail |
+|---|---|
+| Mnemonic | 12-word BIP39 (128-bit entropy) |
+| Seed derivation | `bip39.mnemonicToSeedSync` |
+| Private key | First 32 bytes of seed (SHA-256 fallback only for invalid all-zero edge case) |
+| Public key | Uncompressed secp256k1, 64-byte payload (without `0x04` prefix) |
+| Address | First 20 bytes of SHA-256(public_key_bytes), hex encoded |
+
+Private keys are never persisted in plaintext. Persisted wallet records contain only:
+
+- `address`
+- `publicKey`
+- `encrypted = { ciphertext, salt, iv }`
+
+### 14.2 At-Rest Encryption Model
+
+Wallet encryption is AES-256-GCM with PBKDF2-SHA256 key derivation:
+
+| Parameter | Value |
+|---|---|
+| KDF | PBKDF2 |
+| Hash | SHA-256 |
+| Iterations | 100,000 |
+| Salt length | 16 bytes |
+| IV length | 12 bytes |
+| Cipher | AES-GCM-256 |
+
+This model provides integrity protection (GCM auth tag) and confidentiality for local storage snapshots.
+
+### 14.3 Canonical Transaction Signing
+
+Transactions are signed over deterministic canonical JSON:
+
+1. Serialize payload with sorted keys (`canonicalJson`).
+2. Compute `tx_id = SHA256(canonical_json)`.
+3. Hash tx_id bytes again to match Python backend verification expectation.
+4. Sign with secp256k1 compact signature.
+
+Supported client-side transaction builders:
+
+- `token_transfer`
+- `stake`
+- `unstake`
+
+### 14.4 Wallet UX Security Controls
+
+Implemented controls in current frontend:
+
+- Password strength scoring (length + class diversity checks)
+- Minimum password acceptance policy
+- Locked-by-default behavior with explicit unlock step
+- Local-only key management (no key upload path in normal flow)
+
+---
+
+## 15. Appendix B — Desktop Application Architecture (Electron + Sidecar)
+
+The desktop distribution is a two-process architecture:
+
+| Process | Runtime | Responsibility |
+|---|---|---|
+| Shell | Electron main/renderer | Native app UX, filesystem dialogs, settings, local orchestration |
+| Sidecar | FastAPI + Python | Validation, training, OOD profile fitting/scoring, chain submission |
+
+### 15.1 Electron Main Process Responsibilities
+
+`desktop/electron/main.js` currently provides:
+
+- Sidecar spawn and health checks (`/health` on port `47291`)
+- User data and settings persistence (`closeBehavior`, `startToTray`)
+- Tray-mode lifecycle (background mode vs quit)
+- Hardened renderer boundary via IPC handlers
+
+IPC handlers include:
+
+- `sidecar:port`
+- `dialog:openFile`
+- `fs:readFile`
+- `app:dataPath`
+- `settings:get`, `settings:set`
+
+### 15.2 Sidecar API Modules
+
+`desktop/sidecar/main.py` mounts routers:
+
+| Prefix | Module | Function |
+|---|---|---|
+| `/validate` | `routes/validate.py` | Architecture and model validation |
+| `/train` | `routes/train.py` | Train job setup, SSE metric streaming, stop/status |
+| `/chain` | `routes/chain.py` | Manifest signing, submission, sync status, peer mgmt |
+| `/ood` | `routes/ood.py` | OOD profile fitting and per-image familiarity scoring |
+
+### 15.3 Training Lifecycle in Desktop Flow
+
+The current train flow is single-run-at-a-time:
+
+1. `POST /train/start` stores config.
+2. `GET /train/stream` emits SSE events per epoch.
+3. `POST /train/stop` requests cancellation.
+4. `GET /train/status` reports active/inactive state.
+
+This design keeps orchestration simple and deterministic for first-generation validator onboarding.
+
+### 15.4 Manifest Signing and Deferred Submission
+
+`/chain/sign-checkpoint` generates:
+
+- `checkpoint_hash`
+- architecture hash
+- dataset hash
+- final metrics
+- optional OOD profile payload
+
+Manifest is signed with Ed25519 and submitted via `/chain/submit`. If chain is unreachable, manifests are persisted to `pending_submissions` for delayed retry.
+
+---
+
+## 16. Appendix C — LLM Orchestration Layer (Route/Analyse/Decompose/Explain)
+
+The LLM layer is optional and explicitly non-consensus-critical.
+
+### 16.1 Safety Boundary
+
+`core/api/routes/llm.py` enforces a strict boundary:
+
+- If no orchestrator is configured: returns HTTP `503` with setup instructions.
+- Consensus behavior remains unchanged.
+- QoI, PoQI, PoM, and block validation continue without LLM dependencies.
+
+### 16.2 Endpoint Contracts
+
+| Endpoint | Intent | Output |
+|---|---|---|
+| `POST /llm/route` | Recommend `(model_hint, dataset_id)` for task description | Route decision + confidence |
+| `POST /llm/analyse` | Detect anomalous validators from chain summary | Suspicious node list + re-challenge suggestions |
+| `POST /llm/decompose` | Split complex jobs into parallel subtasks | Structured subtask list |
+| `POST /llm/explain` | NL Q&A over current state | Text answer |
+
+### 16.3 Provider Abstraction
+
+The orchestrator supports provider pluggability:
+
+- Ollama local inference
+- OpenAI cloud inference
+- Mock deterministic provider for tests and offline environments
+
+This enables deterministic CI while preserving real-world deployment options.
+
+---
+
+## 17. Appendix D — End-to-End Transaction Lifecycle & State Transitions
+
+This appendix formalizes practical transaction movement from client to committed state.
+
+### 17.1 Flow for Simple Transactions
+
+1. Wallet builds and signs tx (`token_transfer`, `stake`, `unstake`).
+2. Node REST endpoint validates signature and schema.
+3. Tx enters mempool.
+4. PoS proposer includes tx in PoS block.
+5. Block commits after threshold votes.
+6. ChainState mutates balances/stakes/nonces.
+
+### 17.2 Flow for Inference Transactions
+
+1. Client submits `INFERENCE_REQUEST`.
+2. S-BFT elects quorum from eligible DNN validators.
+3. QoI phases run: PRE-PREPARE -> PREPARE -> COMMIT.
+4. Cosine-similarity agreement determines accepted cluster.
+5. Protocol emits `CONSENSUS_RESULT`, rewards, and penalties.
+6. Reputation and reliability updates are applied deterministically.
+
+### 17.3 Deterministic State Discipline
+
+All economic and consensus-relevant fields are driven through on-chain state transitions; no hidden side databases are trusted for settlement decisions.
+
+---
+
+## 18. Appendix E — API Surface & Endpoint Contracts
+
+InferenceChain exposes a multi-domain API through FastAPI (chain, state, tx, inference, p2p, dashboard, websocket, llm).
+
+### 18.1 Core API Domain Groups
+
+| Domain | Typical Paths | Purpose |
+|---|---|---|
+| Chain | `/chain/*` | Height, blocks, canonical history |
+| State | `/state/*` | Balances, reputations, validator views |
+| Transactions | `/tx/*` | Submit and inspect transactions |
+| Inference | `/inference/*` | Inference request and result retrieval |
+| P2P | `/p2p/*` | Peer status and peering operations |
+| Dashboard | `/dashboard/*` | UI-optimized aggregates |
+| WebSocket | `/ws/*` | Real-time event streaming |
+| LLM | `/llm/*` | Optional orchestration layer |
+
+### 18.2 Desktop Sidecar API
+
+Local sidecar endpoints intentionally run on loopback (`127.0.0.1`) to reduce exposure surface.
+
+### 18.3 Contract Evolution Policy (Current)
+
+The active codebase favors backward compatibility at route level where practical, but does not yet implement a fully versioned `/v1`, `/v2` namespace contract. This is a known future hardening item.
+
+---
+
+## 19. Appendix F — Data, Models, and Training Pipeline
+
+### 19.1 Model Zoo and Baselines
+
+Current repository includes CIFAR-family architectures under `models/architectures` (ResNet variants, WideResNet, VGG, DenseNet, MobileNetV2, PyramidNet).
+
+### 19.2 Dataset and Training Inputs
+
+Desktop flow supports dataset references and archives, with training configuration captured in the signed manifest to provide reproducibility metadata.
+
+### 19.3 OOD Profile Generation
+
+`desktop/sidecar/training/ood_profile.py` implements the hybrid familiarity method:
+
+- shared frozen encoder (ViT-B/16)
+- class-conditional feature statistics
+- optional energy statistics
+- fused knowledge score for quorum weighting and reliability dynamics
+
+### 19.4 Reproducibility Artifacts
+
+Every admitted model path can be traced via:
+
+- architecture hash
+- dataset hash
+- checkpoint hash
+- training config
+- final metrics
+- optional OOD profile hash
+
+---
+
+## 20. Appendix G — Security Model & Threat Analysis
+
+### 20.1 Threat Classes Addressed
+
+| Threat | Mitigation in Current System |
+|---|---|
+| Sybil validator admission | PoM challenge-response + threshold verification |
+| Model substitution after admission | On-chain model hash commitment |
+| Low-quality random outputs | QoI cosine clustering + penalties |
+| Strategic sandbagging | Reliability score + hidden challenge rounds |
+| Quorum manipulation | Deterministic seeded weighted sampling |
+| Private key theft at rest (client) | AES-GCM encrypted wallet store |
+
+### 20.2 Remaining Risks (Open)
+
+- Local endpoint misconfiguration in operator deployments
+- Dataset poisoning if operator training data is malicious
+- Side-channel leakage outside protocol boundary (host compromise)
+- Adversarial inputs beyond current static threshold assumptions
+
+These are tracked roadmap areas, not ignored risks.
+
+---
+
+## 21. Appendix H — Test Coverage, Validation, and Known Gaps
+
+### 21.1 What Is Covered
+
+The repository contains unit/integration test suites under `tests/`, including consensus and blockchain primitives, with QoI-focused validation scenarios actively maintained.
+
+### 21.2 Practical Validation Loops
+
+Project validation currently uses:
+
+- Python unit tests (`pytest`)
+- frontend production builds (`react-scripts build`)
+- desktop packaging pipeline (PyInstaller + Electron)
+- deterministic API smoke tests in local testnet mode
+
+### 21.3 Known Gaps
+
+- More adversarial simulation matrices for large validator counts
+- API schema versioning and compatibility gates
+- Expanded fuzzing for transaction payload edge cases
+- Additional long-horizon economic simulation for token dynamics
+
+---
+
+## 22. Appendix I — Deployment, Operations, and Observability
+
+### 22.1 Runtime Topologies
+
+Supported current operation modes:
+
+- Pure Python node runtime
+- Multi-node local testnet
+- Frontend dashboard deployment (Vercel/static)
+- Desktop app distribution (portable executable and release assets)
+
+### 22.2 Operational Telemetry
+
+Operators can inspect:
+
+- chain height and finality progression
+- peer connectivity
+- validator reliability trends
+- challenge history and penalties
+- training lifecycle and pending submissions
+
+### 22.3 Release Discipline
+
+Desktop release workflow is tag-driven (`v*`) and publishes assets to GitHub Releases via CI. Website Download App links should target `releases/latest` so current binaries are always discoverable.
+
+### 22.4 Current-State Summary
+
+InferenceChain, in its April 2026 state, is already a complete end-to-end prototype stack: wallet -> transaction signing -> consensus -> reputation/reliability -> dashboard + desktop operator flow -> optional LLM coordination. The remaining roadmap focuses on scale, hardening, and ecosystem expansion rather than foundational feasibility.
 
 ---
 
