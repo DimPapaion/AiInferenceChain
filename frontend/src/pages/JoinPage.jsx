@@ -3,10 +3,9 @@ import './JoinPage.css';
 import { uploadModel } from '../api/client';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DESKTOP APP DOWNLOAD — Portable exe built with PyInstaller + Electron
-// Point to deployment guide for download instructions and portable app
+// DESKTOP APP DOWNLOAD — latest release asset (Windows/macOS/Linux)
 // ─────────────────────────────────────────────────────────────────────────────
-const RELEASES_URL = 'https://github.com/DimPapaion/AiInferenceChain/blob/main/DEPLOYMENT_GUIDE.md';
+const RELEASES_URL = 'https://github.com/DimPapaion/AiInferenceChain/releases/latest';
 
 const HOW_IT_WORKS = [
   {
