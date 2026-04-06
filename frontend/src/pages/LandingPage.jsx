@@ -61,8 +61,7 @@ const PATHWAYS = [
     color: 'green',
     label: 'For researchers',
     title: 'Inspect the protocol and live network state',
-    points: ['Use the explorer, validator dashboard, challenge audit trail, and whitepaper to understand consensus, OOD scoring, reliability tracking, and validator weighting.',
-    points: ['Read the protocol overview in About', 'Inspect blocks, validators, and challenge records', 'Download the technical whitepaper (v0.5 with new features)'],
+    points: ['Use the explorer, validator dashboard, challenge audit trail, and whitepaper to understand consensus, OOD scoring, reliability tracking, and validator weighting.', 'Read the protocol overview in About', 'Inspect blocks, validators, and challenge records', 'Download the technical whitepaper (v0.5 with new features)'],
     action: { label: 'Open About', target: 'about' },
   },
 ];
