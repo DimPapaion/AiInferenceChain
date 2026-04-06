@@ -1,491 +1,379 @@
-# InferenceChain: A Decentralized AI Inference Network
-### Technical Whitepaper — v0.5 (April 2026)
+# InferenceChain
+## A Decentralized Blockchain Native to AI Inference
+
+**Quality of Inference Consensus · Proof of Quality of Inference · Sharded BFT**
+
+**Technical Whitepaper & Vision Document**
+
+**Research Preview · v0.5 · April 2026**
+
+Dimitrios Papaioannou  
+Aristotle University of Thessaloniki (AUTH) · InferenceChain Research
 
 ---
 
-## Abstract
+## Table of Contents
 
-InferenceChain is a permissioned blockchain designed to decentralize deep neural network (DNN) inference. It implements three novel protocols developed in the author's own research: **Quality of Inference (QoI)**, **Proof of Quality of Inference (PoQI)**, and **Scalable Byzantine Fault Tolerant consensus (S-BFT)**. Unlike general-purpose blockchains, InferenceChain's consensus mechanism is inference itself — nodes prove their honesty by producing outputs that agree with a verified majority, and are rewarded or slashed accordingly. The network uses the **INFER** token for staking, rewards, and fees.
-
----
-
-## 1. Motivation
-
-Centralized AI inference has fundamental problems:
-
-- **Trust** — users cannot verify that a model ran correctly or that results were not manipulated
-- **Single point of failure** — one provider going offline stops all dependent systems
-- **Accountability** — there is no on-chain record of what model produced what output
-
-Existing blockchains cannot address this because they have no mechanism to evaluate the *quality* of computational work — only whether computation happened. InferenceChain solves this by making quality measurable through Byzantine-robust agreement among independent DNN nodes.
-
----
-
-## 2. Architecture Overview
-
-InferenceChain runs as a network of nodes, each of which may be one of two types:
-
-| Node Type | Role | Stake Requirement |
-|-----------|------|-------------------|
-| **DNN Node** | Runs inference, participates in QoI rounds, earns inference rewards | ≥ 1,000 INFER |
-| **PoS Node** | Validates simple transactions, seals PoS blocks | ≥ 500 INFER |
-
-All nodes participate in the Proof-of-Stake (PoS) layer. Only DNN nodes that have passed **Proof of Model (PoM)** verification are eligible to participate in QoI consensus rounds.
-
-```
-┌─────────────────────────────────────────────────────┐
-│                   InferenceChain                    │
-│                                                     │
-│  ┌──────────┐    ┌──────────┐    ┌──────────────┐  │
-│  │ PoS Node │    │ PoS Node │    │   DNN Node   │  │
-│  │  (stake) │    │  (stake) │    │(stake+model) │  │
-│  └────┬─────┘    └────┬─────┘    └──────┬───────┘  │
-│       │               │                 │           │
-│       └───────────────┴─────────────────┘           │
-│                       │                             │
-│              P2P WebSocket Gossip                   │
-│                       │                             │
-│         ┌─────────────▼────────────────┐            │
-│         │        Chain State           │            │
-│         │  balances / stakes / nodes   │            │
-│         │  inference_log / reputations │            │
-│         └──────────────────────────────┘            │
-└─────────────────────────────────────────────────────┘
-```
+1. Abstract
+2. Problem Statement
+3. Architecture Overview
+4. Quality of Inference Consensus (QoI)
+5. Proof of Quality of Inference (PoQI) — On-chain Reputation
+6. Proof of Model (PoM) — Admission Protocol
+7. Sharded BFT Architecture (S-BFT)
+8. Block Structure & Transaction Types
+9. OOD-Aware Quality & Anti-Gaming Infrastructure (NEW)
+10. What Is Already Built
+11. Tokenomics — INFER Token
+12. Vision & Roadmap
+13. Conclusion
 
 ---
 
-## 3. Blockchain Layer
+## 1. Abstract
 
-### 3.1 Block Types
+InferenceChain is a novel blockchain protocol designed specifically for decentralised AI inference. Unlike general-purpose blockchains that treat computation as an opaque black box, InferenceChain introduces inference quality as a first-class consensus property. Validators do not merely agree on transaction order — they agree on the correctness of deep neural network (DNN) outputs.
 
-InferenceChain produces two block types per slot:
+Three novel primitives drive the protocol: **Quality of Inference Consensus (QoI)**, a PBFT-derived algorithm that uses cosine similarity between inference vectors to reach Byzantine-fault-tolerant agreement; **Proof of Quality of Inference (PoQI)**, an on-chain reputation system that quantifies each validator's historical accuracy and weights their future influence accordingly; and **Sharded BFT (S-BFT)**, a horizontal scaling layer that partitions the validator set into independent committees to achieve linear throughput growth without sacrificing BFT safety guarantees.
 
-- **PoS Block** — contains simple transactions (transfers, staking, node registration). Produced by an elected PoS proposer using stake × reputation weighted selection.
-- **QoI Block** — produced when an inference request is pending and DNN validators are available. Contains the inference transaction, all node responses, consensus result, rewards, and slashes.
-
-### 3.2 Transaction Types
-
-| Family | Type | Description |
-|--------|------|-------------|
-| SIMPLE | `token_transfer` | Transfer INFER between addresses |
-| SIMPLE | `stake` | Lock INFER as validator stake |
-| SIMPLE | `unstake` | Withdraw staked INFER |
-| SIMPLE | `node_register_dnn` | Register a DNN validator with model commitment |
-| SIMPLE | `node_register_pos` | Register a PoS-only validator |
-| SIMPLE | `model_response` | Node's answer to a PoM challenge |
-| INFERENCE | `inference_request` | Client submits an image for inference |
-| SYSTEM | `inference_response` | Node's inference result (per QoI round) |
-| SYSTEM | `consensus_result` | Final agreed class + confidence |
-| SYSTEM | `reward` | Minted INFER for honest nodes |
-| SYSTEM | `slash` | Burned stake for Byzantine nodes |
-| SYSTEM | `node_admitted` | Node passed PoM, activated |
-| SYSTEM | `node_rejected` | Node failed PoM, deactivated |
-
-### 3.3 Address Derivation
-
-```
-private_key  →  secp256k1  →  public_key (64 bytes uncompressed)
-address      =  SHA-256(public_key_bytes)[:20]  as 40-char hex
-```
-
-This is identical in the Python backend (`core/node/identity.py`) and the JavaScript wallet (`frontend/src/utils/wallet.js`).
-
-### 3.4 Transaction Signing
-
-Each transaction has a canonical ID computed as:
-
-```python
-tx_id = SHA-256(JSON({
-    tx_type, sender, recipient, payload, nonce, fee, timestamp
-}, sort_keys=True, no_spaces))
-```
-
-The sender signs `SHA-256(tx_id.encode())` with their secp256k1 private key using compact (64-byte) ECDSA. The public key is included in the wire format so the backend can verify it and register it in the on-chain public key registry (`ChainState.pubkeys`).
-
-### 3.5 Persistence
-
-The chain is persisted to a SQLite database (`data/chain.db`) using WAL mode. On startup, the node replays all committed blocks to reconstruct chain state. The state snapshot (including the public key registry) is saved after every committed block.
+A working testnet implementation — including the full consensus engine, P2P gossip layer, on-chain state machine, model admission protocol, OOD-based quality assessment, reliability tracking with anti-gaming mechanisms, and a live web dashboard — has been developed and is described in this document.
 
 ---
 
-## 4. Proof of Model (PoM)
+## 2. Problem Statement
 
-Before a DNN node can participate in QoI consensus, it must prove its model is genuine. The PoM protocol works as follows:
+The rise of AI inference as a service has created a critical centralisation risk. Today, virtually all AI inference is performed by a handful of large cloud providers. Users have no way to verify that the model they requested actually ran, that the output has not been tampered with, or that the service provider is not selectively serving degraded results.
 
-1. **Registration** — Node submits `node_register_dnn` tx with: model name, architecture spec, `SHA-256(weights_file)`, dataset ID, endpoint URL, public key.
+Existing blockchain-based approaches fall into two categories, both inadequate:
 
-2. **Challenge** — Protocol issues a `model_challenge` system tx with 50 deterministic test indices from the CIFAR-10 test set.
+| Approach | Limitation |
+|----------|-----------|
+| **Optimistic execution** | Assume the inference result is correct and only dispute on-chain after the fact. Disputes are slow, expensive, and rely on a trusted arbiter. |
+| **Commit-reveal schemes** | A node commits to a result hash then reveals it. This prevents copying but provides no quality guarantee — a node can commit a random hash. |
+| **Reputation without verification** | Systems that track reputation without on-chain verifiable proof of model quality are gameable. A node can report high accuracy it never achieved. |
+| **General-purpose BFT** | Standard PBFT agrees on values, not on quality. Two nodes producing different (but equally valid) inference outputs would cause consensus to fail even if both are correct. |
 
-3. **Response** — Node submits `model_response` tx with argmax predictions for the 50 samples.
-
-4. **Verification** — Active validators independently verify: download weights from node's endpoint, compute `SHA-256(weights)`, compare to on-chain commitment, run inference on the same 50 samples, submit `model_verify` tx.
-
-5. **Admission or Rejection** — When 2f+1 positive verifications are collected, a `node_admitted` system tx activates the node. Below the accuracy threshold (80%), `node_rejected` is emitted.
-
-Minimum model accuracy: **80%** on the challenge set.
+InferenceChain addresses all four limitations simultaneously. Consensus is reached on inference quality, verified by mathematical comparison (cosine similarity). Reputation is an on-chain quantity, updated deterministically by protocol rules. Admission requires cryptographic proof of model capability before a node may participate. In-distribution awareness (OOD scoring) and hidden challenges prevent gaming and reward domain expertise.
 
 ---
 
-## 5. Quality of Inference (QoI / PoQI)
+## 3. Architecture Overview
 
-QoI is the core consensus mechanism. It is a PBFT-style protocol adapted for DNN inference.
+InferenceChain separates concerns cleanly across four layers:
 
-### 5.1 Round Lifecycle
+| Layer | Responsibility |
+|-------|-----------------|
+| **Network Layer** | P2P gossip over WebSocket connections. Each node maintains persistent connections to peers. Messages are typed (CONSENSUS, TRANSACTION, BLOCK, PEER_DISCOVERY) and routed accordingly. |
+| **Consensus Layer** | Two concurrent consensus protocols. QoI consensus runs when an INFERENCE_REQUEST transaction enters the mempool. PoS consensus runs for all other (simple) transaction blocks. |
+| **State Layer** | A single ChainState object is the authoritative source of truth — balances, stakes, reputations, registered nodes, inference log, reliability scores, challenge records. All reads bypass any off-chain registry. |
+| **Application Layer** | FastAPI REST + WebSocket API served on port 8000. React dashboard at `/ui`. Desktop sidecar (PyInstaller) with OOD profiling on port 47291. All data read directly from chain state. |
 
-```
-IDLE → PRE_PREPARE → PREPARE → COMMIT → COMMITTED
-                                    ↘ (on timeout) VIEW_CHANGE → NEW_VIEW
-```
+---
 
-1. **PRE_PREPARE** — The elected primary broadcasts its inference result (class probabilities) for the image.
-2. **PREPARE** — Each replica runs the same image through its own model and broadcasts its result.
-3. **COMMIT** — Once 2f+1 PREPAREs agree on a consensus class (majority vote), nodes broadcast COMMITs.
-4. **COMMITTED** — Once 2f+1 COMMITs are received, the round finalizes. A `consensus_result` tx is written to chain.
+## 4. Quality of Inference Consensus (QoI)
 
-### 5.2 Quality Scoring
+QoI is a three-phase Byzantine-fault-tolerant consensus protocol derived from PBFT, adapted to agree not on an arbitrary value but on the quality of a DNN inference result. The key insight is that correct DNN inference on the same image produces output probability vectors that are mathematically close — measurable by cosine similarity.
 
-Nodes are scored based on how close their softmax output is to the consensus class prediction. The primary metric is cosine similarity between a node's probability vector and the consensus vector. Honest nodes receive INFER rewards proportional to their QoI score; nodes that deviate beyond the Byzantine threshold are slashed.
+The protocol requires $n \geq 3f + 1$ validators to tolerate $f$ Byzantine nodes.
 
-| Outcome | Effect |
-|---------|--------|
-| Honest (argmax = consensus class) | INFER reward + reputation gain |
-| Byzantine (wrong argmax) | SLASH_PENALTY (100 INFER) stake deduction + reputation loss |
-| Primary (drove consensus) | Additional LEADER_BONUS (2 INFER) + rep bonus |
+### Phase 1 — PRE-PREPARE
 
-### 5.3 Parameters
+The primary (proposer) receives an INFERENCE_REQUEST containing an image hash. It fetches the image from the requesting client, runs it through its local DNN model, and broadcasts a PRE_PREPARE message containing its output probability vector (softmax over 10 CIFAR-10 classes).
+
+### Phase 2 — PREPARE
+
+Each DNN validator independently runs the same image through its own local model. It computes the cosine similarity between its output vector and the primary's vector. If the similarity exceeds the threshold, it broadcasts a PREPARE message with its own vector. The primary collects PREPARE messages until it has 2f+1.
+
+### Phase 3 — COMMIT
+
+Once 2f+1 PREPARE messages are collected, the primary broadcasts a COMMIT message. Each validator that has seen 2f+1 PREPAREs broadcasts its own COMMIT. When a node collects 2f+1 COMMITs, the round is finalised. A QoI block is appended to the chain containing the consensus result, all signatures, and reputation deltas.
+
+### Quality Scoring
+
+After each round, each validator's output vector is compared pairwise against all others. Validators whose vectors lie within the cosine similarity threshold of the majority cluster are marked as honest and receive reputation increases proportional to their similarity score. Outliers (Byzantine or low-quality nodes) are penalised.
+
+---
+
+## 5. Proof of Quality of Inference (PoQI)
+
+PoQI is the on-chain reputation system that tracks each validator's cumulative inference quality. It is not a separate consensus protocol — it is a deterministic state transition that occurs at the end of every QoI round.
+
+### Reputation Parameters
 
 | Parameter | Value |
 |-----------|-------|
-| Inference reward per round | 10 INFER |
-| Slash penalty | 100 INFER |
-| Leader bonus | 2 INFER |
-| Minimum confidence | 0.5 |
-| Reputation cap per round | +0.5 |
-| Reputation penalty | -0.3 |
+| Initial reputation | 0.0 (all nodes start equal) |
+| Max gain per round | 0.5 (REP_CAP_PER_ROUND) |
+| Penalty per Byzantine act | 0.3 (REP_PENALTY) |
+| Leader bonus per round | +0.1 on top of quality-proportional gain |
+| Reputation cap | No hard cap — grows unboundedly with consistent quality |
+| Reputation floor | 0.0 (cannot go negative) |
+
+Reputation serves two functions: it weights the proposer election (higher reputation → higher probability of being selected as primary), and it weights block reward distribution. A validator that consistently produces high-quality inference results earns disproportionately more INFER tokens over time — creating a strong economic incentive for model quality maintenance.
 
 ---
 
-## 6. S-BFT: Scalable Byzantine Fault Tolerance
+## 6. Proof of Model (PoM) — Admission Protocol
 
-### 6.1 The Scaling Problem
+Before a node may participate in QoI consensus, it must pass the Proof of Model admission protocol. PoM prevents Sybil attacks and ensures that every active DNN validator in the network actually possesses a model that meets minimum quality standards.
+
+### Admission Flow
+
+| Step | Action |
+|------|--------|
+| **Step 1 — Register** | Node submits a NODE_REGISTER_DNN transaction containing: model name, weights SHA-256 hash (on-chain commitment), endpoint URL, dataset ID, architecture JSON, and public key. Node status: PENDING_POM. |
+| **Step 2 — Challenge** | Protocol generates a MODEL_CHALLENGE transaction with 50 deterministically selected CIFAR-10 test samples. Seed = SHA-256(prev_block_hash + node_address) — fully reproducible by any verifier. |
+| **Step 3 — Response** | Challenged node runs the 50 samples through its model and broadcasts a MODEL_RESPONSE transaction with its predictions within the timeout window (30 seconds). |
+| **Step 4 — Verification** | Existing DNN validators independently verify the response against known CIFAR-10 test labels. Each broadcasts a MODEL_VERIFY transaction with pass/fail. |
+| **Step 5 — Admission** | If ≥ 80% accuracy is achieved and enough verifiers agree, a NODE_ADMITTED transaction is committed. Node becomes active. If it fails: NODE_REJECTED — node must re-register. |
+
+The weights hash committed in Step 1 binds the node to a specific model. If a node later attempts to serve a different model, the hash mismatch is detectable on-chain by any verifier — providing cryptographic proof of model substitution fraud.
+
+---
+
+## 7. Sharded BFT Architecture (S-BFT)
+
+Standard PBFT has $O(n^2)$ message complexity — as the validator set grows, the communication overhead grows quadratically, making it impractical beyond ~100 nodes. S-BFT solves this by electing a small quorum of K nodes per inference request, rather than involving the full validator set.
+
+### The Scaling Problem
 
 With N DNN nodes in the network, running QoI across all of them for every inference request is unscalable:
+- $O(N^2)$ message complexity
+- Latency that tracks the slowest node
+- Most nodes having no familiarity with the requested model or dataset
 
-- **Message complexity** grows as O(N²) per round
-- **Latency** tracks the slowest node in the full set
-- **Relevance** — most nodes may not be trained on the requested model/dataset
+S-BFT reduces the active committee to K = 10 nodes (configurable), achieving $O(K^2)$ message complexity independent of total network size.
 
-### 6.2 Quorum Selection
+### Per-Request Quorum Selection
 
-S-BFT solves this by electing a small **quorum** of K nodes per inference request. The quorum is:
+For each inference request, a quorum is elected as follows:
 
-1. **Filtered** — only nodes whose `model_name` and `dataset_id` match the request
-2. **Randomly sampled** — without replacement, from the filtered eligible pool
-3. **Deterministic** — the seed is `SHA-256(block_hash || request_id)`, reproducible by any participant
-4. **Verifiable** — any node can recompute the same quorum from public information
+1. **Filter** eligible DNN validators by model name and dataset ID matching the request
+2. **Compute seed** = SHA-256(block_hash || request_id) — unique per round, reproducible by any node
+3. **Sample K nodes** from the filtered pool using the seed — without replacement, deterministically
+4. **Sort** selected nodes by node_id for canonical ordering
 
-```python
-seed = SHA-256(block_hash + request_id)
-quorum = random.sample(eligible_filtered_nodes, K, seed=seed)
-```
+Quorum assignment is verifiable by any network participant and unpredictable before the inference request arrives — preventing adversaries from pre-positioning nodes.
 
-### 6.3 Quorum Parameters
+### Quorum Parameters
 
-| Parameter | Value | Notes |
-|-----------|-------|-------|
-| Target quorum size | 10 | Ideal size |
-| Floor | 4 | Minimum for f=1 (need ≥3f+1) |
-| Ceiling | 19 | Maximum (gives f=6) |
+| Parameter | Value |
+|-----------|-------|
+| Target quorum size | 10 nodes (ideal) |
+| Floor | 4 nodes minimum — gives f=1 (requires 3f+1) |
+| Ceiling | 19 nodes maximum — gives f=6 |
+| Fallback | If filtered pool < 4 nodes, all eligible DNN validators participate |
 
-If the filtered pool has fewer than 4 eligible nodes, the quorum falls back to all eligible DNN validators.
-
-### 6.4 Local BFT Parameters
+### Local BFT Parameters
 
 Each quorum operates with its own fault-tolerance parameters, independent of the global chain f:
 
-```
-f         = (K - 1) // 3
-threshold = 2f + 1
+$$f = \lfloor (K - 1) / 3 \rfloor$$
+$$\text{threshold} = 2f + 1$$
 
-K=4  → f=1, threshold=3
-K=10 → f=3, threshold=7
-K=19 → f=6, threshold=13
-```
+For K=10: f=3, threshold=7. For K=4: f=1, threshold=3.
 
-### 6.5 Non-Quorum Nodes
+Nodes not elected to the quorum stand by for one block slot — they do not participate and do not interfere. The committed QoI block arrives via P2P gossip and is ingested normally by all nodes.
 
-Nodes not elected to the quorum for a given round stand by for one block slot and do not participate. The committed QoI block arrives via P2P gossip and is ingested normally.
+### Quorum Integrity at Commit
 
-### 6.6 Quorum Integrity at Commit
-
-When `_commit_qoi_block` executes, it validates that every commit signature came from a node that was in the elected quorum. Signatures from outside the quorum are stripped — those nodes receive no reward and their response is ignored.
-
-### 6.7 OOD-Biased Quorum Selection (Knowledge Self-Assessment)
-
-Every admitted DNN node automatically calibrates an **Out-of-Distribution (OOD) scorer** the moment its `NODE_ADMITTED` transaction is committed in a PoS block. The scorer measures how *in-distribution* (familiar) a candidate image is for a given node's model — enabling the quorum to be biased toward validators that are most capable on the specific input domain.
-
-#### Scorer hierarchy
-
-| Scorer | Method | Calibration cost |
-|--------|--------|------------------|
-| `MahalanobisOODScorer` | Class-conditional Gaussian fit on penultimate-layer features | One calibration pass over CIFAR-10 test set |
-| `EnergyOODScorer` | Free-energy of logits: −T · log Σ exp(fᵢ/T) | Zero — uses raw logits |
-| `LikelihoodRegretScorer` | Paper-exact VAE Likelihood Regret | Separate VAE training pass |
-
-At admission time, nodes attempt Mahalanobis calibration first and fall back to the Energy scorer if the CIFAR-10 test set is not available on disk. The calibration runs in a background thread so it never blocks the consensus loop.
-
-#### Biased selection algorithm
-
-```python
-# 1. For each eligible node, query its OOD scorer with the request image
-scores = {node_id: scorer.score(image_tensor) for node_id in eligible}
-
-# 2. Build a top-2K shortlist (lowest score = most in-distribution)
-shortlist = sorted(scores, key=scores.get)[:2 * K]
-
-# 3. Sample K nodes deterministically from the shortlist
-seed    = SHA-256(block_hash + request_id)
-quorum  = random.sample(shortlist, K, seed=seed)
-```
-
-Nodes without a calibrated scorer fall back to the old uniform-random pool, so the feature degrades gracefully on new or partially-admitted networks. BFT determinism is fully preserved: any peer can reproduce the same quorum from public information.
+When a QoI block is sealed, the protocol validates that every commit signature originated from a node in the elected quorum. Signatures from outside the quorum are stripped — those nodes receive no reward. The elected quorum node IDs are embedded in the ConsensusOutcome and written to chain in the CONSENSUS_RESULT transaction.
 
 ---
 
-## 7. LLM Orchestration Layer
+## 8. Block Structure & Transaction Types
 
-The LLM layer is an **optional, consensus-independent** coordination service. It runs above the blockchain, never participates in QoI consensus or quorum selection, and can be omitted entirely without affecting network safety.
+### Two Block Types
 
-### 7.1 Architecture
+| Block Type | Description |
+|-----------|------------|
+| **QoI Block** | Produced after a successful QoI consensus round. Contains exactly one INFERENCE_REQUEST, plus system transactions: INFERENCE_RESPONSE, CONSENSUS_RESULT, REWARD entries for each participating validator, and reputation delta updates. Committed by the QoI state machine. |
+| **PoS Block** | Produced for all simple (non-inference) transactions. Contains up to 50 simple transactions per block. Proposer is selected by stake × reputation weighting. Committed by the PoS consensus machine with 2f+1 votes. |
 
-```
-client  →  POST /llm/*  →  InferenceOrchestrator  →  LLM Provider
-                                     │
-                          reads chain state (read-only)
-                          never writes transactions
-```
+### Transaction Taxonomy
 
-The `InferenceOrchestrator` is initialized at node startup and injected into the FastAPI application as a singleton dependency. If no provider is configured, all `/llm/*` endpoints return HTTP 503.
-
-### 7.2 Provider Configuration
-
-| Flag | Variant | Notes |
-|------|---------|-------|
-| `--llm-provider ollama` | Local Ollama server | Recommended — no API key, fully offline |
-| `--llm-provider openai` | OpenAI API | Requires `OPENAI_API_KEY` or `--openai-key` |
-| `--llm-provider mock` | Deterministic mock | CI / unit tests |
-| *(omitted)* | Disabled | Default — no LLM, no extra dependencies |
-
-### 7.3 Endpoints
-
-| Endpoint | Body | Response |
-|----------|------|----------|
-| `POST /llm/route` | `{"image_description": "..."}` | `{model_hint, dataset_id, reasoning}` |
-| `POST /llm/analyse` | `{}` | `{anomalous_nodes, recommend_pom, summary}` |
-| `POST /llm/decompose` | `{"task_description": "..."}` | `[{sub_task, model_hint, priority}]` |
-| `POST /llm/explain` | `{"question": "..."}` | `{answer, sources}` |
+| Type | Family | Purpose |
+|------|--------|---------|
+| TOKEN_TRANSFER | Simple | Peer-to-peer INFER token transfer |
+| STAKE / UNSTAKE | Simple | Lock / unlock tokens as validator stake |
+| NODE_REGISTER_DNN | Simple | Register as a DNN validator (triggers PoM) |
+| NODE_REGISTER_POS | Simple | Register as a PoS-only validator |
+| MODEL_RESPONSE | Simple | Node's answer to a PoM challenge |
+| INFERENCE_REQUEST | Inference | Client submits an image for consensus inference |
+| INFERENCE_RESPONSE | System | Protocol records a validator's output vector |
+| CONSENSUS_RESULT | System | Final agreed inference result |
+| REWARD | System | Token minted to a validator for honest participation |
+| SLASH | System | Tokens burned from a validator for Byzantine behaviour |
+| MODEL_CHALLENGE | System | Protocol challenges a pending node's model |
+| MODEL_VERIFY | System | Existing validator verifies a challenge response |
+| NODE_ADMITTED | System | Node passed PoM — becomes active |
+| NODE_REJECTED | System | Node failed PoM — must re-register |
 
 ---
 
-## 9. Wallet & Client Protocol
+## 9. OOD-Aware Quality & Anti-Gaming Infrastructure (NEW)
 
-### 7.1 Key Scheme
+### 9.1 Out-of-Distribution Scoring
 
-- **Mnemonic** — 12 BIP39 words (128-bit entropy, `@scure/bip39`)
-- **Private key** — first 32 bytes of BIP39 seed (`mnemonicToSeedSync().slice(0, 32)`)
-- **Public key** — 64-byte uncompressed secp256k1 point (no 04 prefix)
-- **Address** — `SHA-256(pubkey_bytes)[:20]` as 40-char hex
+Every admitted DNN node automatically calibrates an **Out-of-Distribution (OOD) scorer** the moment its `NODE_ADMITTED` transaction is committed. The scorer measures how *in-distribution* (familiar) a candidate image is for a given node's model.
 
-### 7.2 Storage Security
+#### Scoring Method: Hybrid Mahalanobis + Energy
 
-The private key is **never stored in plaintext**. LocalStorage holds only:
-```json
-{
-  "address": "...",
-  "publicKey": "...",
-  "encrypted": {
-    "ciphertext": "...",
-    "salt": "...",
-    "iv": "..."
-  }
-}
-```
+- **Shared Encoder**: All nodes use frozen ViT-B/16 (torchvision.models.vit_b_16)
+- **Class-Conditional Profiles**: Mahalanobis distance on penultimate-layer features
+- **Knowledge Score K(x)**: Logistic fusion yielding $K(x) \in [0, 1]$
+- **Query-Time Signing**: Optional Ed25519 signatures for authenticity
 
-Encryption: **AES-256-GCM** with **PBKDF2** key derivation (100,000 iterations, SHA-256). The private key lives only in React state while the wallet is unlocked.
+### 9.2 Multi-Factor Weighted Quorum Selection
 
-### 7.3 Transaction Flow
+The quorum incorporates three factors: **stake**, **knowledge**, and **reliability**.
 
-1. Wallet builds tx locally (canonical JSON, computes tx_id)
-2. Signs: `ECDSA(SHA-256(tx_id.encode()), private_key)` → 64-byte compact sig
-3. Submits to `POST /tx/submit` with `public_key` field included
-4. Backend registers pubkey in `ChainState.pubkeys` on first confirmed tx
-5. Subsequent txs from the same address are verified using the registered pubkey
+#### Weighting Formula
+
+$$w_i = \text{stake}_i \times K_i^{\gamma} \times R_i^{\beta}$$
+
+where $\gamma = 1.5$ and $\beta = 1.0$ (tunable).
+
+#### Deterministic Weighted Sampling
+
+Using Efraimidis-Spirakis algorithm for fair, reproducible selection without replacement.
+
+### 9.3 Node Reliability Tracking (Anti-Gaming)
+
+Per-node **EMA-based reliability** with dual update pathways:
+
+- **Regular QoI rounds** (α=0.2): Target = 0.6 + 0.6×QoI_score (honest) or 0.2 (Byzantine)
+- **Challenge rounds** (α=0.45): Target = 0.65 + 0.55×K (honest) or 0.25 − 0.2×K (Byzantine, knowledge-weighted)
+
+Reliability score ∈ [0.05, 1.5], clamped to prevent extremes.
+
+**Per-node counters**: rounds, honest_rounds, byzantine_rounds, challenge_rounds, challenge_penalties.
+
+### 9.4 Deterministic Hidden Challenge Rounds
+
+**Challenge Selection** at configurable rate (default 15%):
+
+$$\text{is\_challenge} = \frac{\text{int}(SHA256(\text{request\_id} | \text{block\_hash})[:4])}{2^{32}} < \text{rate}$$
+
+**Challenge Records**: Timestamp, request_id, image_hash, block_hash, per-node honesty, OOD/knowledge scores.
+
+**Challenge-Driven Updates**: Knowledge-weighted reliability adjustments — high-knowledge dishonest nodes receive strong penalties.
 
 ---
 
-## 10. Token Economics
+## 10. What Is Already Built
+
+The following components are fully implemented and operational on the local testnet as of April 2026.
+
+✓ Blockchain core with QoI & PoS blocks, Merkle roots, persistent SQLite storage  
+✓ ChainState with balances, stakes, reputations, registered nodes, reliability/challenge records  
+✓ S-BFT quorum selection with multi-factor weighting (stake × knowledge × reliability)  
+✓ QoI consensus engine (3-phase PBFT, view-change, timeout)  
+✓ PoS consensus for simple transactions  
+✓ Proof of Model admission protocol  
+✓ OOD profiling with shared ViT-B/16 encoder and Mahalanobis profiles  
+✓ Reliability tracking with dual EMA pathways  
+✓ Deterministic hidden challenges with challenge records  
+✓ Wallet & signature verification (secp256k1, BIP39)  
+✓ P2P gossip layer with WebSocket connections  
+✓ REST API (40+ endpoints) with full OpenAPI documentation  
+✓ Model registry (7 CIFAR-10 architectures)  
+✓ Frontend dashboard (React)  
+✓ Desktop application (PyInstaller + Electron)  
+✓ Test suite (37/37 QoI consensus tests passing)
+
+---
+
+## 11. Tokenomics — INFER Token
+
+The INFER token is the native currency. It serves three roles: **economic incentive** for inference quality, **security bond** making Byzantine behaviour costly, and **governance weight** for future votes.
+
+### Supply Parameters
 
 | Parameter | Value |
 |-----------|-------|
 | Token name | INFER |
 | Maximum supply | 100,000,000 INFER |
-| Genesis allocation | 10,000,000 INFER |
-| Min DNN validator stake | 1,000 INFER |
-| Min PoS validator stake | 500 INFER |
-| Slash penalty | 100 INFER per Byzantine act |
-| Inference reward | 10 INFER per consensus round |
-| Block fee | Distributed to the block proposer |
+| Genesis allocation | 10,000,000 INFER (10%) |
+| Block reward | 10.0 INFER per QoI round |
+| Leader bonus | +2.0 INFER |
+| Slash penalty | 100.0 INFER |
+| Min DNN stake | 1,000 INFER |
+| Min PoS stake | 500 INFER |
 
----
+### Reward Distribution
 
-## 11. Network Protocol
-
-Nodes communicate over WebSocket (`ws://host:port+1000`). Message types:
-
-| Message | Direction | Purpose |
-|---------|-----------|---------|
-| `POS_BLOCK` | Proposer → Peers | Candidate PoS block |
-| `POS_VOTE` | All → All | Vote on candidate block |
-| `QOI_MSG` | Quorum → Quorum | PRE_PREPARE / PREPARE / COMMIT / VIEW_CHANGE |
-| `NEW_BLOCK` | Committer → Peers | Committed block for ingestion |
-| `IMAGE_REQUEST` | DNN node → Peers | Request image bytes by hash |
-| `IMAGE_RESPONSE` | Peer → DNN node | Image bytes |
-
----
-
-## 12. REST API
-
-Base URL: `http://localhost:8000`
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /chain/height` | Current block height |
-| `GET /chain/tip` | Latest block |
-| `GET /chain/block/{height}` | Block by height |
-| `GET /chain/blocks` | Paginated block list |
-| `GET /chain/stats` | Chain statistics |
-| `GET /state/balance/{address}` | INFER balance |
-| `GET /state/history/{address}` | Transaction history |
-| `GET /state/nodes/active` | Active validators |
-| `GET /state/nodes/dnn` | Active DNN validators |
-| `GET /state/nodes/pos` | Active PoS validators |
-| `GET /tx/{tx_id}` | Transaction status |
-| `GET /tx/pending` | Mempool snapshot |
-| `POST /tx/submit` | Submit signed transaction |
-| `POST /state/faucet` | Testnet token faucet |
-| `GET /p2p/peers` | Known peers |
-| `GET /dashboard/validators` | Validator dashboard data |
-| `GET /dashboard/stats` | Network statistics |
-| `POST /llm/route` | *(opt-in)* Recommend model + dataset for an image description |
-| `POST /llm/analyse` | *(opt-in)* Scan validators for anomalies |
-| `POST /llm/decompose` | *(opt-in)* Split a task into parallel sub-requests |
-| `POST /llm/explain` | *(opt-in)* NL Q&A about chain state |
-
-WebSocket streams:
-- `ws://.../ws/consensus-rounds` — live consensus events
-- `ws://.../ws/validators` — validator state changes
-- `ws://.../ws/models` — model registry events
-
----
-
-## 13. Running a Node
-
-### Single node (default, persistent)
-
-```bash
-python node_runner.py
-# Persists to data/chain.db automatically
-# REST API: http://localhost:8000/docs
-```
-
-### Two-node testnet
-
-```bash
-# Terminal 1
-python node_runner.py --port 8000 --db-path data/node1.db
-
-# Terminal 2
-python node_runner.py --port 8001 --db-path data/node2.db \
-    --peer http://127.0.0.1:8000
-```
-
-### DNN node
-
-```bash
-python node_runner.py \
-    --node-type dnn \
-    --model resnet20 \
-    --weights-dir models/weights \
-    --private-key <hex_private_key>
-```
-
-### DNN node with LLM layer (local Ollama)
-
-```bash
-ollama pull llama3.2
-python node_runner.py \
-    --node-type dnn \
-    --model resnet20 \
-    --weights-dir models/weights \
-    --private-key <hex_private_key> \
-    --llm-provider ollama --llm-model llama3.2
-```
-
-### DNN node with LLM layer (OpenAI)
-
-```bash
-export OPENAI_API_KEY=sk-...
-python node_runner.py \
-    --node-type dnn \
-    --model resnet20 \
-    --weights-dir models/weights \
-    --private-key <hex_private_key> \
-    --llm-provider openai --llm-model gpt-4o-mini
-```
-
-### In-memory (ephemeral, no persistence)
-
-```bash
-python node_runner.py --db-path ""
-```
-
----
-
-## 14. Current Implementation Status
-
-| Component | Status |
+| Recipient | Amount |
 |-----------|--------|
-| Blockchain core (blocks, txs, chain state) | ✓ Complete |
-| Proof-of-Stake consensus | ✓ Complete |
-| Proof of Model (PoM) verification | ✓ Complete |
-| QoI / PoQI consensus state machine | ✓ Complete |
-| S-BFT quorum selection (hash-based) | ✓ Complete |
-| Signature verification (wallet users) | ✓ Complete |
-| SQLite persistence (WAL) | ✓ Complete |
-| P2P gossip network | ✓ Complete |
-| REST API (all endpoints) | ✓ Complete |
-| React frontend dashboard | ✓ Complete |
-| secp256k1 wallet (BIP39, AES-GCM) | ✓ Complete |
-| CIFAR-10 CNN model suite (7 architectures) | ✓ Complete |
-| OOD scoring (Mahalanobis / Energy / LikelihoodRegret) | ✓ Complete |
-| OOD auto-calibration on NODE_ADMITTED | ✓ Complete |
-| OOD-biased quorum selection (top-2K shortlist) | ✓ Complete |
-| LLM orchestration layer (OpenAI / Ollama / Mock) | ✓ Complete |
-| LLM /route /analyse /decompose /explain endpoints | ✓ Complete |
-| Wallet auto-lock (idle timer) | ⏳ Pending |
-| Faucet as real SYSTEM tx | ⏳ Pending |
+| **Primary** | Base reward × (1 + leader_bonus_ratio) |
+| **Honest validators** | Proportional share weighted by cosine similarity |
+| **Byzantine validators** | Zero reward + 100 INFER slashed |
+| **PoS validators** | Proportional share (separate pool) |
+
+### Stake × Reputation Interaction
+
+$$\text{reward\_share}(i) = \frac{\text{stake}(i) \times \text{reputation}(i)}{\sum_j (\text{stake}(j) \times \text{reputation}(j))}$$
+
+Quality and capital are equally weighted — new nodes earn nothing until demonstrating quality, preventing pure capital dominance.
+
+### Emission Schedule
+
+~6.3M INFER/year maximum theoretical rate at 10 INFER per 5-second block target. Remaining 90M supply: ~14 years to emit. Actual emission demand-driven.
 
 ---
 
-## 15. References
+## 12. Vision & Roadmap
 
-1. D. Papaioannou et al., *Quality of Inference: A Protocol for Byzantine-Robust DNN Consensus*, AUTH, 2024.
-2. D. Papaioannou et al., *S-BFT: Scalable Byzantine Fault Tolerance via Per-Request Quorum Selection*, AUTH, 2025.
-3. M. Castro, B. Liskov, *Practical Byzantine Fault Tolerance*, OSDI, 1999.
-4. A. Vaswani et al., *Attention Is All You Need*, NeurIPS, 2017.
-5. BIP39 — Mnemonic code for generating deterministic keys.
+InferenceChain's vision: become the trust layer for AI inference — the protocol any application can use to prove that a specific AI model produced a specific output, verified and economically incentivised.
+
+### Phase 1 — Foundation (Current: v0.5)
+
+✓ Core consensus, reputation, model admission  
+✓ Sharded BFT with multi-factor weighting  
+✓ OOD-aware scoring and reliability tracking  
+✓ Deterministic hidden challenges  
+✓ Full implementation and testnet
+
+### Phase 2 — Scaling & Security (Q3 2026)
+
+■ Tag-driven challenge pools (domain taxonomy)  
+■ Output-space label canonicalization  
+■ Signature aggregation (BLS)  
+■ Peer discovery (Kademlia DHT)  
+■ Multi-model support  
+■ Light client protocol
+
+### Phase 3 — Ecosystem (Q1 2027)
+
+■ Smart contracts (Turing-complete VM)  
+■ Cross-chain bridge (EVM)  
+■ Model marketplace  
+■ DAO governance  
+■ Mainnet launch  
+■ Python/JS SDK
+
+### The Broader Vision
+
+As AI becomes consequential across healthcare, law, finance, autonomous systems — verifiable, auditable AI becomes necessity. InferenceChain provides cryptographic infrastructure for this audit trail: any inference result on-chain can be independently re-verified by anyone, at any time, with mathematical certainty.
+
+End state: AI inference as transparent, economically incentivised, cryptographically auditable process — not a black box.
 
 ---
 
-*InferenceChain is a research prototype. Not for production use.*
+## 13. Conclusion
+
+InferenceChain introduces a fundamentally new class of blockchain — designed from first principles for AI inference. The three core innovations (QoI, PoQI, S-BFT) with OOD-aware weighting, reliability tracking, and hidden challenges solve trustless, verifiable, quality-assured DNN inference at scale.
+
+Complete working implementation demonstrates protocol is not merely theoretical. Testnet runs QoI rounds, admits validators through PoM, tracks on-chain reputation and reliability, manages challenge rounds, and serves full-featured dashboard — all operating coherently.
+
+INFER token creates self-sustaining economic system where quality and security incentives align: stake securing network proportionally determines reward shares; reputation — earned only through quality — amplifies stake's influence.
+
+InferenceChain is positioned to become the trust infrastructure for the AI era — making AI outputs as verifiable as blockchain transactions.
+
+---
+
+**Dimitrios Papaioannou**
+
+InferenceChain Research · Aristotle University of Thessaloniki (AUTH)
+
+**April 2026 · Research Preview v0.5**

@@ -128,7 +128,7 @@ export default function GetStartedPage({ navigate }) {
                 {path.isDownload ? (
                   <a
                     className="btn btn-primary"
-                    href="https://github.com/DimPapaion/AiInferenceChain/releases/latest"
+                    href="https://github.com/DimPapaion/AiInferenceChain/blob/main/DEPLOYMENT_GUIDE.md"
                     target="_blank"
                     rel="noreferrer"
                     style={{ display: 'inline-flex', marginTop: 4 }}

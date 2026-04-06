@@ -8,7 +8,7 @@ const PILLARS = [
   },
   {
     title: 'Adaptive validator choice',
-    body: 'Model compatibility, quorum selection, and OOD-aware bias all work together so the active validator set is better aligned with the request being processed.',
+    body: 'Model compatibility, quorum selection, and OOD-aware bias combine with multi-factor weighting (stake × knowledge × reliability) to ensure the active validator set is optimized for each request. Hidden challenges prevent gaming.',
   },
   {
     title: 'Operator-friendly architecture',

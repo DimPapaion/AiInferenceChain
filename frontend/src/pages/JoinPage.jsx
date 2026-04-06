@@ -3,9 +3,10 @@ import './JoinPage.css';
 import { uploadModel } from '../api/client';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PUBLIC DOWNLOAD URL — point this at GitHub Releases / CDN when builds exist
+// DESKTOP APP DOWNLOAD — Portable exe built with PyInstaller + Electron
+// Point to deployment guide for download instructions and portable app
 // ─────────────────────────────────────────────────────────────────────────────
-const RELEASES_URL = 'https://github.com/DimPapaion/AiInferenceChain/releases/latest';
+const RELEASES_URL = 'https://github.com/DimPapaion/AiInferenceChain/blob/main/DEPLOYMENT_GUIDE.md';
 
 const HOW_IT_WORKS = [
   {
@@ -50,14 +51,24 @@ const APP_FEATURES = [
     body: 'Watch loss and accuracy curves update in real time as epochs complete. Training runs locally on your GPU (CPU fallback). Checkpoints saved every 5 epochs.',
   },
   {
+    icon: '▲',
+    title: 'OOD profiling & knowledge scoring',
+    body: 'The app automatically fits class-conditional Out-of-Distribution profiles using a shared ViT-B/16 encoder. These determine your node\'s knowledge (familiarity) with each request domain.',
+  },
+  {
+    icon: '⬢',
+    title: 'Anti-gaming infrastructure',
+    body: 'Your reliability is tracked on-chain with dual EMA updates. Hidden challenges (15% rate) verify honest participation. Multi-factor quorum weighting (stake × knowledge × reliability) ensures fair selection.'
+  },
+  {
     icon: '✦',
     title: 'Signed manifest submission',
-    body: 'Training results are hashed and signed with your Ed25519 node key. The manifest is submitted to the chain for validator QoI challenges.',
+    body: 'Training results are hashed and signed with your Ed25519 node key. The manifest is submitted to the chain. Validators verify your model through QoI challenge rounds and OOD profiling.',
   },
   {
     icon: '◇',
     title: 'Node & wallet dashboard',
-    body: 'After registration, monitor your node status, challenge results, training history, network peers, and on-chain identity from the persistent dashboard.',
+    body: 'After admission, monitor your node status, reliability score, challenge audit trail, QoI participation, OOD familiarity scores, and on-chain reputation from the dashboard.'
   },
 ];
 
@@ -461,7 +472,7 @@ function StepValidate({ identity, model, arch, result, setResult, onRegister, re
                 <div className="jp-result-title">NODE_REGISTER_DNN submitted</div>
                 <div className="jp-result-sub">
                   Your node is pending PoM verification. Watch the Validators page
-                  — once challengers confirm your model, you become an active DNN validator.
+                  — once validators confirm your model quality through hidden challenges and QoI rounds, your node becomes active.
                 </div>
               </div>
             </div>
