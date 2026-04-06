@@ -7,7 +7,7 @@ section-oriented pagination to match long-form whitepaper layout.
 
 import re
 from pathlib import Path
-from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import (
@@ -20,9 +20,18 @@ from reportlab.platypus import (
     Preformatted,
     HRFlowable,
 )
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY, TA_RIGHT
+from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT
 from reportlab.lib import colors
-from reportlab.pdfgen import canvas
+
+PAGE_WIDTH, PAGE_HEIGHT = A4
+THEME = {
+    'ink': colors.HexColor('#0F172A'),
+    'muted': colors.HexColor('#334155'),
+    'accent': colors.HexColor('#0EA5E9'),
+    'accent_soft': colors.HexColor('#E0F2FE'),
+    'line': colors.HexColor('#CBD5E1'),
+    'bg': colors.HexColor('#F8FAFC'),
+}
 
 def read_markdown(filepath):
     """Read and parse markdown file"""
@@ -53,7 +62,7 @@ def _parse_table(lines):
     return rows
 
 
-def parse_markdown_to_elements(md_text, styles):
+def parse_markdown_to_elements(md_text, styles, content_width):
     """Convert markdown to reportlab flowables while preserving detail."""
     elements = []
     lines = md_text.split('\n')
@@ -73,7 +82,10 @@ def parse_markdown_to_elements(md_text, styles):
         if line.startswith('# '):
             title = line[2:].strip()
             elements.append(Paragraph(title, styles['Heading1']))
+            elements.append(Paragraph('Decentralized AI Inference Consensus', styles['CoverSubtitle']))
             elements.append(Spacer(1, 0.18 * inch))
+            elements.append(HRFlowable(width="100%", thickness=1.2, color=THEME['accent']))
+            elements.append(Spacer(1, 0.12 * inch))
             i += 1
         
         # H2 - Section
@@ -85,7 +97,19 @@ def parse_markdown_to_elements(md_text, styles):
                 if section_count > 1:
                     elements.append(PageBreak())
             elements.append(Spacer(1, 0.12 * inch))
-            elements.append(Paragraph(section, styles['Heading2']))
+            section_cell = Table(
+                [[Paragraph(section, styles['SectionTitle'])]],
+                colWidths=[content_width],
+            )
+            section_cell.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), THEME['accent_soft']),
+                ('BOX', (0, 0), (-1, -1), 0.8, THEME['accent']),
+                ('LEFTPADDING', (0, 0), (-1, -1), 8),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ]))
+            elements.append(section_cell)
             elements.append(Spacer(1, 0.08 * inch))
             i += 1
         
@@ -146,10 +170,11 @@ def parse_markdown_to_elements(md_text, styles):
                 t = Table(rows, repeatRows=1)
                 t.setStyle(TableStyle([
                     ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#EFF4FA')),
-                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#1F2937')),
+                    ('BACKGROUND', (0, 0), (-1, 0), THEME['ink']),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
                     ('FONTSIZE', (0, 0), (-1, -1), 9.5),
-                    ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#CBD5E1')),
+                    ('GRID', (0, 0), (-1, -1), 0.4, THEME['line']),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8FAFC')]),
                     ('LEFTPADDING', (0, 0), (-1, -1), 5),
                     ('RIGHTPADDING', (0, 0), (-1, -1), 5),
                     ('TOPPADDING', (0, 0), (-1, -1), 4),
@@ -199,19 +224,33 @@ def create_pdf():
     
     # Override heading styles for professional appearance
     styles['Heading1'].fontSize = 22
-    styles['Heading1'].textColor = colors.HexColor('#1a1a1a')
+    styles['Heading1'].textColor = THEME['ink']
     styles['Heading1'].spaceAfter = 0.16 * inch
     styles['Heading1'].alignment = TA_CENTER
     
-    styles['Heading2'].fontSize = 15
-    styles['Heading2'].textColor = colors.HexColor('#1F3A5F')
-    styles['Heading2'].spaceAfter = 0.08 * inch
-    styles['Heading2'].borderColor = colors.HexColor('#3498db')
-    styles['Heading2'].borderWidth = 0
-    
     styles['Heading3'].fontSize = 12
-    styles['Heading3'].textColor = colors.HexColor('#34495e')
+    styles['Heading3'].textColor = THEME['muted']
     styles['Heading3'].spaceAfter = 0.05 * inch
+
+    styles.add(ParagraphStyle(
+        name='CoverSubtitle',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=11,
+        leading=14,
+        alignment=TA_CENTER,
+        textColor=THEME['muted'],
+    ))
+
+    styles.add(ParagraphStyle(
+        name='SectionTitle',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=12.5,
+        leading=14,
+        textColor=THEME['ink'],
+        alignment=TA_LEFT,
+    ))
     
     styles.add(ParagraphStyle(
         name='WPBody',
@@ -220,7 +259,7 @@ def create_pdf():
         fontSize=10.8,
         leading=15.2,
         alignment=TA_JUSTIFY,
-        textColor=colors.HexColor('#111827'),
+        textColor=THEME['ink'],
     ))
 
     styles.add(ParagraphStyle(
@@ -229,19 +268,44 @@ def create_pdf():
         fontName='Courier',
         fontSize=9.5,
         leading=12,
-        textColor=colors.HexColor('#1F2937'),
-        backColor=colors.HexColor('#F8FAFC'),
+        textColor=THEME['ink'],
+        backColor=THEME['bg'],
         leftIndent=8,
         rightIndent=8,
     ))
+
+    def draw_page_chrome(canv, doc_obj):
+        canv.saveState()
+        # Top accent bar
+        canv.setFillColor(THEME['ink'])
+        canv.rect(0, PAGE_HEIGHT - 22, PAGE_WIDTH, 22, stroke=0, fill=1)
+        canv.setFillColor(THEME['accent'])
+        canv.rect(0, PAGE_HEIGHT - 22, PAGE_WIDTH * 0.28, 22, stroke=0, fill=1)
+
+        # Subtle corner accent on cover page only
+        if canv.getPageNumber() == 1:
+            canv.setFillColor(colors.HexColor('#E6F7FF'))
+            canv.circle(PAGE_WIDTH - 40, PAGE_HEIGHT - 95, 72, stroke=0, fill=1)
+            canv.setFillColor(colors.HexColor('#BAE6FD'))
+            canv.circle(PAGE_WIDTH - 24, PAGE_HEIGHT - 82, 36, stroke=0, fill=1)
+
+        # Footer line + page number
+        canv.setStrokeColor(THEME['line'])
+        canv.setLineWidth(0.7)
+        canv.line(doc_obj.leftMargin, 26, PAGE_WIDTH - doc_obj.rightMargin, 26)
+        canv.setFillColor(THEME['muted'])
+        canv.setFont('Helvetica', 8.5)
+        canv.drawString(doc_obj.leftMargin, 14, 'InferenceChain Whitepaper v0.5')
+        canv.drawRightString(PAGE_WIDTH - doc_obj.rightMargin, 14, f'Page {canv.getPageNumber()}')
+        canv.restoreState()
     
     # Parse markdown and create elements
     print("Converting markdown to PDF elements...")
-    elements = parse_markdown_to_elements(md_text, styles)
+    elements = parse_markdown_to_elements(md_text, styles, doc.width)
     
     # Build PDF
     print(f"Writing PDF to {pdf_path}...")
-    doc.build(elements)
+    doc.build(elements, onFirstPage=draw_page_chrome, onLaterPages=draw_page_chrome)
     print(f"✓ PDF generated: {pdf_path}")
     return True
 
