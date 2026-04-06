@@ -1,6 +1,6 @@
 {
   "name": "inferencechain-desktop",
-  "version": "0.1.0",
+  "version": "0.5.1",
   "description": "InferenceChain desktop node client",
   "author": "InferenceChain",
   "main": "electron/main.js",
@@ -62,13 +62,17 @@
       }
     ],
     "win": {
-      "target": "nsis"
+      "target": ["portable"]
     },
     "mac": {
       "target": "dmg"
     },
     "linux": {
       "target": "AppImage"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
     }
   },
   "eslintConfig": {

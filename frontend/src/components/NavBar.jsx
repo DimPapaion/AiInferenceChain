@@ -151,7 +151,7 @@ export default function NavBar({ current, navigate }) {
             )}
             <a
               className="btn btn-primary nav-download-btn"
-              href="https://github.com/DimPapaion/AiInferenceChain/releases/latest"
+              href="https://github.com/DimPapaion/AiInferenceChain/releases/tag/v0.5.1"
               target="_blank"
               rel="noreferrer"
               title="Download InferenceChain desktop app"

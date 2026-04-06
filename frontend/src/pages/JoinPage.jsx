@@ -3,9 +3,9 @@ import './JoinPage.css';
 import { uploadModel } from '../api/client';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DESKTOP APP DOWNLOAD — latest release asset (Windows/macOS/Linux)
+// DESKTOP APP DOWNLOAD — pinned current release tag (Windows/macOS/Linux)
 // ─────────────────────────────────────────────────────────────────────────────
-const RELEASES_URL = 'https://github.com/DimPapaion/AiInferenceChain/releases/latest';
+const RELEASES_URL = 'https://github.com/DimPapaion/AiInferenceChain/releases/tag/v0.5.1';
 
 const HOW_IT_WORKS = [
   {
