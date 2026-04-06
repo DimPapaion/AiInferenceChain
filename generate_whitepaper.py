@@ -192,6 +192,13 @@ def parse_md(md_text):
             i += 1
             continue
 
+        # ── Table of Contents: new page ───────────────────────────────────────
+        if line.strip() == "## Table of Contents":
+            flowables.append(PageBreak())
+            flowables.append(Paragraph("Table of Contents", styles["h1"]))
+            i += 1
+            continue
+
         # ── Abstract label ────────────────────────────────────────────────────
         if line.strip() == "## Abstract":
             flowables.append(Spacer(1, 4))
